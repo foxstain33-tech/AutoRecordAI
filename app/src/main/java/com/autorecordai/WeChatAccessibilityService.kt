@@ -7,6 +7,8 @@ import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -172,10 +174,8 @@ class WeChatAccessibilityService : AccessibilityService() {
     }
 
     private fun processWeChatRecording(filePath: String) {
-        // 使用与普通电话相同的方式处理
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            PhoneCallService::class.java.getDeclaredMethod("processRecording", String::class.java)
-            // 简化的处理：调用AI处理器
+        // 使用 runBlocking 在 IO 线程处理
+        runBlocking(Dispatchers.IO) {
             try {
                 val text = AIProcessor.transcribeWithXunfei(filePath)
                 val summary = AIProcessor.summarizeWithDoubao(text ?: "")
