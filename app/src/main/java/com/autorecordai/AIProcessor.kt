@@ -92,7 +92,7 @@ object AIProcessor {
                 .addHeader("X-CurTime", curTime)
                 .addHeader("X-Param", paramBase64)
                 .addHeader("X-CheckSum", sign)
-                .post(RequestBody.create(jsonBody.toString(), "application/json".toMediaType()))
+                .post(RequestBody.create("application/json".toMediaType(), jsonBody.toString().toByteArray()))
                 .build()
 
             val response = httpClient.newCall(request).execute()
@@ -143,7 +143,7 @@ object AIProcessor {
                 .url(DOUBAO_ENDPOINT)
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Authorization", "Bearer $DOUBAO_API_KEY")
-                .post(RequestBody.create(requestBody.toString(), "application/json".toMediaType()))
+                .post(RequestBody.create("application/json".toMediaType(), requestBody.toString().toByteArray()))
                 .build()
 
             val response = httpClient.newCall(request).execute()
