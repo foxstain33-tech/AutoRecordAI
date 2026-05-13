@@ -42,25 +42,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 延迟启动服务，等待Activity完全加载
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                if (hasAllPermissions()) {
-                    startPhoneService()
-                } else {
-                    // 如果没有权限，显示提示
-                    Toast.makeText(this@MainActivity, "请授予必要权限", Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                Log.e("MainActivity", "启动服务失败: " + e.message)
-                Toast.makeText(this@MainActivity, "服务启动失败: " + e.message, Toast.LENGTH_LONG).show()
-            }
-        }, 1000)  // 延迟1秒启动
-
-        // 检查无障碍服务
-        if (!isAccessibilityServiceEnabled()) {
-            showAccessibilityDialog()
-        }
+        // 测试：只显示消息，不启动任何服务
+        Toast.makeText(this, "App已打开", Toast.LENGTH_SHORT).show()
     }
 
     private fun hasAllPermissions(): Boolean {
