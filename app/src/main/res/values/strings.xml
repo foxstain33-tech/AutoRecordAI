@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">自动录音AI</string>
+    <string name="accessibility_service_description">自动录音AI 无障碍服务\n\n用于监听微信电话通话状态，当检测到微信电话时自动开始录音。\n\n首次使用需要：\n1. 允许录音权限\n2. 开启无障碍服务权限</string>
+</resources>
