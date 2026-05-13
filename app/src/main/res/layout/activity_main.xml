@@ -1,1 +1,168 @@
-<?xml version=" 1.0\ encoding=\utf-8\?><LinearLayout xmlns:android=\http://schemas.android.com/apk/res/android\ android:layout_width=\match_parent\ android:layout_height=\match_parent\><TextView android:layout_width=\wrap_content\ android:layout_height=\wrap_content\ android:text=\Test\ /></LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="@color/background">
+
+    <!-- 标题 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📞 自动录音AI"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:textColor="@color/primary"
+        android:layout_marginTop="32dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="通话录音 · 语音转文字 · AI智能总结"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="32dp"/>
+
+    <!-- 状态卡片 -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="服务状态"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"/>
+
+            <TextView
+                android:id="@+id/tv_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔄 检测中..."
+                android:textSize="14sp"
+                android:layout_marginTop="12dp"/>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/divider"
+                android:layout_marginVertical="12dp"/>
+
+            <!-- 普通电话状态 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="📱 普通电话监听"/>
+
+                <TextView
+                    android:id="@+id/tv_phone_status"
+                    android:text="✅ 已开启"
+                    android:textSize="12sp"
+                    android:textColor="@color/success"/>
+
+            </LinearLayout>
+
+            <!-- 微信电话状态 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="💬 微信电话监听"/>
+
+                <TextView
+                    android:id="@+id/tv_wechat_status"
+                    android:text="⚠️ 未开启"
+                    android:textSize="12sp"
+                    android:textColor="@color/warning"/>
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </androidx.cardview.widget.CardView>
+
+    <!-- 操作按钮 -->
+    <Button
+        android:id="@+id/btn_start_service"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🚀 启动录音服务"
+        android:textSize="16sp"
+        android:padding="16dp"
+        android:backgroundTint="@color/primary"/>
+
+    <Button
+        android:id="@+id/btn_open_settings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚙️ 权限与设置"
+        android:textSize="14sp"
+        android:layout_marginTop="12dp"
+        style="@style/Widget.Material3.Button.OutlinedButton"/>
+
+    <Button
+        android:id="@+id/btn_enable_accessibility"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="♿ 开启微信电话监听"
+        android:textSize="14sp"
+        android:layout_marginTop="12dp"
+        style="@style/Widget.Material3.Button.TonalButton"/>
+
+    <!-- 录音记录 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📋 最近录音记录"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginTop="32dp"
+        android:layout_marginBottom="8dp"
+        android:layout_gravity="left"/>
+
+    <TextView
+        android:id="@+id/tv_recent_records"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:text="暂无录音记录\n\n每次通话结束后，录音会自动保存并处理"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:gravity="top"/>
+
+    <!-- 版本信息 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="AutoRecordAI v1.0"
+        android:textSize="12sp"
+        android:textColor="@color/text_hint"
+        android:layout_marginTop="16dp"/>
+
+</LinearLayout>
