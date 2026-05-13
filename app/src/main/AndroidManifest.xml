@@ -36,7 +36,7 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:label="自动录音AI"
         android:supportsRtl="true"
         android:theme="@style/Theme.AutoRecordAI"
