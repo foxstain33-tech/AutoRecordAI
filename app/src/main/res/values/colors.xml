@@ -10,4 +10,5 @@
     <color name="warning">#F59E0B</color>
     <color name="error">#EF4444</color>
     <color name="divider">#E5E7EB</color>
+    <color name="ic_launcher_background">#4A90D9</color>
 </resources>
