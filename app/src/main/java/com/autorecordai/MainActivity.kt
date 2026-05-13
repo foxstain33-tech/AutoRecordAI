@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,12 +41,20 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // 检查权限
-        if (!hasAllPermissions()) {
-            requestPermissions()
-        } else {
-            startPhoneService()
-        }
+        // 延迟启动服务，等待Activity完全加载
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                if (hasAllPermissions()) {
+                    startPhoneService()
+                } else {
+                    // 如果没有权限，显示提示
+                    Toast.makeText(this@MainActivity, "请授予必要权限", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "启动服务失败: " + e.message)
+                Toast.makeText(this@MainActivity, "服务启动失败: " + e.message, Toast.LENGTH_LONG).show()
+            }
+        }, 1000)  // 延迟1秒启动
 
         // 检查无障碍服务
         if (!isAccessibilityServiceEnabled()) {
