@@ -1,6 +1,7 @@
 package com.autorecordai
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -72,9 +73,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val pref = androidx.preference.PreferenceManager.getDefaultSharedPreferences(this)
-        val enabled = pref.getBoolean("accessibility_service_enabled", false)
-        return enabled
+        val pref = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        return pref.getBoolean("accessibility_service_enabled", false)
     }
 
     private fun showAccessibilityDialog() {
