@@ -44,9 +44,10 @@ jobs:
       - name: Release APK
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v1
+        continue-on-error: true
         with:
           files: app/build/outputs/apk/debug/*.apk
-          tag_name: v1.0-auto-build
+          tag_name: v1.0-auto-build-${timestamp}
           draft: false
           prerelease: false
         env:
