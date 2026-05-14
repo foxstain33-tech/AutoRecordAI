@@ -46,7 +46,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: app/build/outputs/apk/debug/*.apk
-          tag_name: v${{ github.run_number }}-${{ github.run_id }}
+          tag_name: v1.0-auto-build
           draft: false
           prerelease: false
         env:
@@ -74,23 +74,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Create config file
-        env:
-          XUNFEI_APP_ID: ${{ secrets.XUNFEI_APP_ID }}
-          XUNFEI_API_KEY: ${{ secrets.XUNFEI_API_KEY }}
-          XUNFEI_API_SECRET: ${{ secrets.XUNFEI_API_SECRET }}
-          DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
-        run: |
-          cat > AIProcessor.kt << 'EOF'
-          // API configuration file
-          const val XUNFEI_APP_ID = "${{ secrets.XUNFEI_APP_ID }}"
-          const val XUNFEI_API_KEY = "${{ secrets.XUNFEI_API_KEY }}"
-          const val XUNFEI_API_SECRET = "${{ secrets.XUNFEI_API_SECRET }}"
-          const val DOUBAO_API_KEY = "${{ secrets.DOUBAO_API_KEY }}"
-          EOF
-
       - name: Build APK with API config
-        run: ./gradlew assembleDebug --no-daemon
+        env:
+          DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
+        run: ./gradlew assembleDebug -PDOUBAO_API_KEY="${{ secrets.DOUBAO_API_KEY }}" --no-daemon
 
       - name: Upload API-enabled APK
         uses: actions/upload-artifact@v4
