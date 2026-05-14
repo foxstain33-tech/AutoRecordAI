@@ -2,10 +2,48 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center_horizontal">
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="AutoRecordAI Test"
-        android:textSize="24sp"/>
+        android:text="自动录音AI"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="32dp"/>
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="正在检查权限..."
+        android:textSize="16sp"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/btn_request_permissions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="授予权限"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone"/>
+
+    <Button
+        android:id="@+id/btn_accessibility"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="开启无障碍服务"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone"/>
+
+    <Button
+        android:id="@+id/btn_start_service"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="启动录音服务"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone"/>
+
 </LinearLayout>
