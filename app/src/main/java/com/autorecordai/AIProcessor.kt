@@ -28,7 +28,8 @@ object AIProcessor {
     
     // 豆包/火山引擎配置
     // 请去 https://console.volcengine.com/ 注册并创建应用获取
-    private const val DOUBAO_API_KEY = "YOUR_DOUBAO_API_KEY"          // 豆包API Key
+    // 通过GitHub Secrets注入，构建时从BuildConfig读取
+    private val DOUBAO_API_KEY: String = BuildConfig.DOUBAO_API_KEY.ifEmpty { "YOUR_DOUBAO_API_KEY" }
     private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     private const val DOUBAO_MODEL = "doubao-pro-32k"                 // 可选: doubao-pro-32k, doubao-lite-32k
     
