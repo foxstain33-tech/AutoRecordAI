@@ -34,7 +34,8 @@ class MainActivity : AppCompatActivity() {
         val denied = results.filter { !it.value }.map { it.key }
         if (denied.isEmpty()) {
             Toast.makeText(this, "所有权限已授予", Toast.LENGTH_SHORT).show()
-            // 暂不启动服务，仅更新UI
+            // 权限授予后启动服务
+            startServices()
             updateUI()
         } else {
             Toast.makeText(this, "部分权限被拒绝: " + denied.joinToString(), Toast.LENGTH_LONG).show()
@@ -66,8 +67,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnStartService.setOnClickListener {
-            // 暂不启动服务
-            Toast.makeText(this, "服务启动功能暂未启用（调试中）", Toast.LENGTH_SHORT).show()
+            // 启动服务
+            startServices()
         }
     }
 
@@ -99,13 +100,41 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         if (hasAllPermissions()) {
-            findViewById<TextView>(R.id.tv_status)?.text = "权限已授予 ✅"
+            if (isAccessibilityServiceEnabled()) {
+                findViewById<TextView>(R.id.tv_status)?.text = "运行中 ✅"
+            } else {
+                findViewById<TextView>(R.id.tv_status)?.text = "权限已授予，请开启无障碍服务"
+            }
         }
+    }
+
+    private fun startServices() {
+        // 启动电话录音服务
+        val phoneServiceIntent = Intent(this, PhoneCallService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(phoneServiceIntent)
+        } else {
+            startService(phoneServiceIntent)
+        }
+        Toast.makeText(this, "电话录音服务已启动", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "PhoneCallService started")
+        
+        // 保存状态
+        getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("accessibility_service_enabled", true)
+            .apply()
+        
+        updateUI()
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         val pref = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         return pref.getBoolean("accessibility_service_enabled", false)
+    }
+
+    companion object {
+        private const val TAG = "MainActivity"
     }
 
     private fun showAccessibilityDialog() {
