@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.media.MediaRecorder
 import android.os.Build
@@ -34,10 +35,22 @@ class PhoneCallService : Service() {
     private val CHANNEL_ID = "phone_call_recording"
     private val NOTIFICATION_ID = 1001
 
+    // 检查是否应该工作
+    private fun shouldRecord(): Boolean {
+        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("service_running", false)
+    }
+
     private val phoneStateListener = object : PhoneStateListener() {
         override fun onCallStateChanged(state: Int, phoneNumber: String?) {
             super.onCallStateChanged(state, phoneNumber)
             Log.d(TAG, "通话状态变化: $state, 号码: $phoneNumber")
+
+            // 检查是否应该工作
+            if (!shouldRecord()) {
+                Log.d(TAG, "服务未启动，跳过")
+                return
+            }
 
             when (state) {
                 TelephonyManager.CALL_STATE_OFFHOOK -> {
@@ -93,6 +106,12 @@ class PhoneCallService : Service() {
             return
         }
 
+        // 检查是否应该工作
+        if (!shouldRecord()) {
+            Log.d(TAG, "服务未启动，不录音")
+            return
+        }
+
         try {
             // 确保录音权限
             if (checkCallingOrSelfPermission(android.Manifest.permission.RECORD_AUDIO)
@@ -142,6 +161,9 @@ class PhoneCallService : Service() {
             // 发送Toast提示
             Toast.makeText(this, "开始录音: $phoneNumber", Toast.LENGTH_SHORT).show()
 
+            // 发送广播：录音开始
+            sendBroadcast(Intent(MainActivity.ACTION_RECORDING_STARTED))
+
         } catch (e: Exception) {
             Log.e(TAG, "录音启动失败: ${e.message}")
             e.printStackTrace()
@@ -171,6 +193,12 @@ class PhoneCallService : Service() {
 
             // 显示完成提示
             Toast.makeText(this, "录音完成 (${duration}秒)，正在AI处理...", Toast.LENGTH_SHORT).show()
+
+            // 发送广播：录音停止
+            val stopIntent = Intent(MainActivity.ACTION_RECORDING_STOPPED).apply {
+                putExtra("audio_path", currentFilePath)
+            }
+            sendBroadcast(stopIntent)
 
             // 异步处理录音文件（转文字+AI总结）
             currentFilePath?.let { path ->
@@ -209,6 +237,12 @@ class PhoneCallService : Service() {
 
             Log.d(TAG, "转写完成，文字长度: ${text.length}")
 
+            // 发送广播：转写文字（目前是一次性发送，实时显示需要流式识别）
+            val textIntent = Intent(MainActivity.ACTION_REALTIME_TEXT).apply {
+                putExtra("text", text)
+            }
+            sendBroadcast(textIntent)
+
             // 步骤2：调用豆包API总结
             updateNotification("AI处理中", "正在生成总结...")
             val summary = AIProcessor.summarizeWithDoubao(text)
@@ -220,6 +254,12 @@ class PhoneCallService : Service() {
             }
 
             Log.d(TAG, "总结完成，长度: ${summary.length}")
+
+            // 发送广播：AI总结
+            val summaryIntent = Intent(MainActivity.ACTION_AI_SUMMARY).apply {
+                putExtra("summary", summary)
+            }
+            sendBroadcast(summaryIntent)
 
             // 步骤3：显示最终结果通知
             showResultNotification("通话总结已生成", summary.take(100) + "...")
