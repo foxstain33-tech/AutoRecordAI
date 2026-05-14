@@ -46,7 +46,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: app/build/outputs/apk/debug/*.apk
-          tag_name: v1.0-auto-build
+          tag_name: v${{ github.run_number }}-${{ github.run_id }}
           draft: false
           prerelease: false
         env:
