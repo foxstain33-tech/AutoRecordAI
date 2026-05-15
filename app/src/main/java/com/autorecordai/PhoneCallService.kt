@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.telephony.PhoneStateListener
@@ -35,7 +36,6 @@ class PhoneCallService : Service() {
     private val CHANNEL_ID = "phone_call_recording"
     private val NOTIFICATION_ID = 1001
 
-    // 使用旧的 PhoneStateListener（API 31+ 已废弃但仍可用）
     @Suppress("DEPRECATION")
     private var phoneStateListener: PhoneStateListener? = null
 
@@ -44,7 +44,6 @@ class PhoneCallService : Service() {
         return prefs.getBoolean("service_running", false)
     }
 
-    @Suppress("DEPRECATION")
     private fun handleCallState(state: Int, phoneNumber: String?) {
         Log.d(TAG, "通话状态变化: $state, 号码: $phoneNumber")
 
@@ -69,6 +68,7 @@ class PhoneCallService : Service() {
         }
     }
 
+    @Suppress("DEPRECATION")
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -76,15 +76,12 @@ class PhoneCallService : Service() {
 
         telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
 
-        // 使用旧的 PhoneStateListener（API 31 已废弃但仍可用）
-        // Android 16 (API 36) 上 PhoneStateListener 仍然工作，只是不推荐
-        @Suppress("DEPRECATION")
-        phoneStateListener = object : PhoneStateListener(Looper.getMainLooper()) {
+        phoneStateListener = object : PhoneStateListener() {
             override fun onCallStateChanged(state: Int, phoneNumber: String?) {
                 handleCallState(state, phoneNumber)
             }
         }
-        @Suppress("DEPRECATION")
+
         telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
 
         Log.d(TAG, "PhoneCallService 已启动")
@@ -99,10 +96,10 @@ class PhoneCallService : Service() {
     @Suppress("DEPRECATION")
     override fun onDestroy() {
         super.onDestroy()
-        @Suppress("DEPRECATION")
         phoneStateListener?.let {
             telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
         }
+        phoneStateListener = null
         if (isRecording) {
             try { stopRecordingAndProcess() } catch (_: Exception) {}
         }
