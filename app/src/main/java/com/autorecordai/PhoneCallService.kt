@@ -11,7 +11,6 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.telephony.PhoneStateListener
-import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.util.Log
 import android.widget.Toast
@@ -36,7 +35,8 @@ class PhoneCallService : Service() {
     private val CHANNEL_ID = "phone_call_recording"
     private val NOTIFICATION_ID = 1001
 
-    private var telephonyCallback: TelephonyCallback? = null
+    // 使用旧的 PhoneStateListener（API 31+ 已废弃但仍可用）
+    @Suppress("DEPRECATION")
     private var phoneStateListener: PhoneStateListener? = null
 
     private fun shouldRecord(): Boolean {
@@ -44,6 +44,7 @@ class PhoneCallService : Service() {
         return prefs.getBoolean("service_running", false)
     }
 
+    @Suppress("DEPRECATION")
     private fun handleCallState(state: Int, phoneNumber: String?) {
         Log.d(TAG, "通话状态变化: $state, 号码: $phoneNumber")
 
@@ -75,27 +76,16 @@ class PhoneCallService : Service() {
 
         telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // API 31+: extend TelephonyCallback (which implements CallStateListener)
-            telephonyCallback = object : TelephonyCallback() {
-                override fun onCallStateChanged(state: Int) {
-                    handleCallState(state, null)
-                }
+        // 使用旧的 PhoneStateListener（API 31 已废弃但仍可用）
+        // Android 16 (API 36) 上 PhoneStateListener 仍然工作，只是不推荐
+        @Suppress("DEPRECATION")
+        phoneStateListener = object : PhoneStateListener(Looper.getMainLooper()) {
+            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                handleCallState(state, phoneNumber)
             }
-            // registerTelephonyCallback expects the TelephonyCallback instance
-            telephonyManager.registerTelephonyCallback(
-                mainExecutor,
-                telephonyCallback!!
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            phoneStateListener = object : PhoneStateListener(Looper.getMainLooper()) {
-                override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                    handleCallState(state, phoneNumber)
-                }
-            }
-            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
         }
+        @Suppress("DEPRECATION")
+        telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
 
         Log.d(TAG, "PhoneCallService 已启动")
     }
@@ -106,16 +96,12 @@ class PhoneCallService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @Suppress("DEPRECATION")
     override fun onDestroy() {
         super.onDestroy()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            telephonyCallback?.let {
-                try { telephonyManager.unregisterTelephonyCallback(it) } catch (_: Exception) {}
-            }
-        } else {
-            phoneStateListener?.let {
-                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
-            }
+        @Suppress("DEPRECATION")
+        phoneStateListener?.let {
+            telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
         }
         if (isRecording) {
             try { stopRecordingAndProcess() } catch (_: Exception) {}
