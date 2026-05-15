@@ -1,19 +1,20 @@
 package com.autorecordai
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
@@ -23,11 +24,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.Timer
 import java.util.TimerTask
 
@@ -35,23 +31,23 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        
-        // Broadcast actions
         const val ACTION_RECORDING_STARTED = "com.autorecordai.RECORDING_STARTED"
         const val ACTION_RECORDING_STOPPED = "com.autorecordai.RECORDING_STOPPED"
         const val ACTION_REALTIME_TEXT = "com.autorecordai.REALTIME_TEXT"
         const val ACTION_AI_SUMMARY = "com.autorecordai.AI_SUMMARY"
     }
 
-    private val REQUIRED_PERMISSIONS = arrayOf(
+    private val REQUIRED_PERMISSIONS = mutableListOf(
         Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.POST_NOTIFICATIONS
-    )
+        Manifest.permission.READ_PHONE_STATE
+    ).apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }.toTypedArray()
 
     private var isWorking = false
     private var recordingStartTime: Long = 0
-    private val handler = Handler(Looper.getMainLooper())
     private var timer: Timer? = null
 
     private lateinit var btnToggle: Button
@@ -61,6 +57,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvAiSummary: TextView
     private lateinit var scrollRealtime: ScrollView
     private lateinit var scrollSummary: ScrollView
+    private lateinit var btnAccessibility: Button
+
+    // 是否已经弹过无障碍弹窗（本次会话只弹一次）
+    private var accessibilityDialogShown = false
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -68,46 +68,27 @@ class MainActivity : AppCompatActivity() {
         val denied = results.filter { !it.value }.map { it.key }
         if (denied.isEmpty()) {
             Toast.makeText(this, "所有权限已授予", Toast.LENGTH_SHORT).show()
-            checkAccessibilityService()
         } else {
             Toast.makeText(this, "部分权限被拒绝: " + denied.joinToString(), Toast.LENGTH_LONG).show()
         }
         updateUI()
     }
 
-    private val batteryOptimizationLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-        // 检查电池优化白名单状态
-        checkBatteryOptimization()
-    }
-
-    // 广播接收器 - 接收来自服务的更新
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                ACTION_RECORDING_STARTED -> {
-                    runOnUiThread {
-                        onRecordingStarted()
-                    }
-                }
+                ACTION_RECORDING_STARTED -> runOnUiThread { onRecordingStarted() }
                 ACTION_RECORDING_STOPPED -> {
                     val audioPath = intent.getStringExtra("audio_path") ?: ""
-                    runOnUiThread {
-                        onRecordingStopped(audioPath)
-                    }
+                    runOnUiThread { onRecordingStopped(audioPath) }
                 }
                 ACTION_REALTIME_TEXT -> {
                     val text = intent.getStringExtra("text") ?: ""
-                    runOnUiThread {
-                        appendRealtimeText(text)
-                    }
+                    runOnUiThread { appendRealtimeText(text) }
                 }
                 ACTION_AI_SUMMARY -> {
                     val summary = intent.getStringExtra("summary") ?: ""
-                    runOnUiThread {
-                        showAiSummary(summary)
-                    }
+                    runOnUiThread { showAiSummary(summary) }
                 }
             }
         }
@@ -117,12 +98,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        Toast.makeText(this, "App已打开 v7", Toast.LENGTH_SHORT).show()
-
         initViews()
         setupUI()
-        checkPermissions()
-        checkBatteryOptimization()
+        updateUI()
+
+        // 首次打开只检查权限，不弹无障碍对话框
+        if (!hasAllPermissions()) {
+            tvStatus.text = "请先授予权限"
+        }
     }
 
     private fun initViews() {
@@ -133,6 +116,7 @@ class MainActivity : AppCompatActivity() {
         tvAiSummary = findViewById(R.id.tv_ai_summary)
         scrollRealtime = findViewById(R.id.scroll_realtime)
         scrollSummary = findViewById(R.id.scroll_summary)
+        btnAccessibility = findViewById(R.id.btn_accessibility)
     }
 
     private fun setupUI() {
@@ -148,7 +132,7 @@ class MainActivity : AppCompatActivity() {
             requestPermissions()
         }
 
-        findViewById<Button>(R.id.btn_accessibility).setOnClickListener {
+        btnAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
     }
@@ -160,79 +144,82 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // 无障碍服务不强制要求——有则监听微信，没有也监听电话
         if (!isAccessibilityServiceEnabled()) {
-            Toast.makeText(this, "请先开启无障碍服务", Toast.LENGTH_SHORT).show()
-            showAccessibilityDialog()
-            return
+            // 只弹一次
+            if (!accessibilityDialogShown) {
+                accessibilityDialogShown = true
+                AlertDialog.Builder(this)
+                    .setTitle("微信电话监听")
+                    .setMessage("要监听微信电话，需开启无障碍服务。\n\n前往：设置 → 无障碍 → 找到「自动录音AI」→ 开启\n\n不开启也可以监听普通电话。")
+                    .setPositiveButton("去设置") { _, _ ->
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                    .setNegativeButton("跳过") { _, _ -> }
+                    .show()
+            }
         }
 
-        // 启动服务
-        startServices()
-        
+        // 启动电话监听服务
+        startPhoneService()
+
         isWorking = true
         recordingStartTime = System.currentTimeMillis()
         updateUI()
         startTimer()
-        
-        Toast.makeText(this, "开始工作", Toast.LENGTH_SHORT).show()
+
+        // 清空之前的文字
+        tvRealtimeText.text = "监听中，等待通话..."
+        tvAiSummary.text = "通话结束后自动生成总结"
+
+        Toast.makeText(this, "已开始监听通话", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Work started")
     }
 
     private fun stopWork() {
-        // 停止服务
-        stopServices()
-        
+        stopPhoneService()
+
         isWorking = false
         updateUI()
         stopTimer()
-        
-        Toast.makeText(this, "停止工作，正在生成AI总结...", Toast.LENGTH_SHORT).show()
+
+        Toast.makeText(this, "已停止监听", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Work stopped")
-        
-        // 触发 AI 总结（这里需要通过服务来调用）
-        // 暂时显示占位符
-        tvAiSummary.text = "正在处理..."
     }
 
-    private fun startServices() {
-        // 启动电话录音服务
-        val phoneServiceIntent = Intent(this, PhoneCallService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(phoneServiceIntent)
-        } else {
-            startService(phoneServiceIntent)
+    private fun startPhoneService() {
+        try {
+            val intent = Intent(this, PhoneCallService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                .edit().putBoolean("service_running", true).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "启动服务失败: ${e.message}")
+            Toast.makeText(this, "启动服务失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
-        Log.d(TAG, "PhoneCallService started")
-        
-        // 保存状态
-        getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("service_running", true)
-            .apply()
     }
 
-    private fun stopServices() {
-        // 停止电话录音服务
-        val phoneServiceIntent = Intent(this, PhoneCallService::class.java)
-        stopService(phoneServiceIntent)
-        Log.d(TAG, "PhoneCallService stopped")
-        
-        // 保存状态
+    private fun stopPhoneService() {
+        try {
+            stopService(Intent(this, PhoneCallService::class.java))
+        } catch (e: Exception) {
+            Log.e(TAG, "停止服务失败: ${e.message}")
+        }
         getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("service_running", false)
-            .apply()
+            .edit().putBoolean("service_running", false).apply()
     }
 
     private fun startTimer() {
         timer = Timer()
         timer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                runOnUiThread {
-                    updateRecordingTime()
-                }
+                runOnUiThread { updateRecordingTime() }
             }
-        }, 0, 1000) // 每秒更新一次
+        }, 0, 1000)
     }
 
     private fun stopTimer() {
@@ -242,75 +229,57 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateRecordingTime() {
         if (!isWorking) return
-        
         val elapsed = System.currentTimeMillis() - recordingStartTime
         val seconds = (elapsed / 1000) % 60
         val minutes = (elapsed / (1000 * 60)) % 60
-        val hours = (elapsed / (1000 * 60 * 60))
-        
-        val timeStr = String.format("%02d:%02d:%02d", hours, minutes, seconds)
-        tvRecordingTime.text = "录音时间: $timeStr"
+        val hours = elapsed / (1000 * 60 * 60)
+        tvRecordingTime.text = String.format("监听时间: %02d:%02d:%02d", hours, minutes, seconds)
     }
 
     private fun onRecordingStarted() {
-        // 服务通知我们录音开始了
-        Log.d(TAG, "Recording started")
+        Log.d(TAG, "Recording started broadcast received")
+        tvRealtimeText.text = "通话中，正在录音..."
     }
 
     private fun onRecordingStopped(audioPath: String) {
-        // 服务通知我们录音停止了
         Log.d(TAG, "Recording stopped, audio: $audioPath")
-        
+        tvAiSummary.text = "通话结束，正在AI处理..."
         if (audioPath.isNotEmpty()) {
-            // 触发 AI 处理
             processRecording(audioPath)
         }
     }
 
     private fun appendRealtimeText(text: String) {
-        // 追加实时文字
         val currentText = tvRealtimeText.text.toString()
-        if (currentText == "等待通话开始...") {
+        if (currentText.startsWith("等待") || currentText.startsWith("监听中") || currentText.startsWith("通话中")) {
             tvRealtimeText.text = text
         } else {
             tvRealtimeText.append("\n$text")
         }
-        
-        // 自动滚动到底部
-        scrollRealtime.post {
-            scrollRealtime.fullScroll(ScrollView.FOCUS_DOWN)
-        }
+        scrollRealtime.post { scrollRealtime.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     private fun showAiSummary(summary: String) {
         tvAiSummary.text = summary
-        
-        // 自动滚动到总结区域
-        scrollSummary.post {
-            scrollSummary.fullScroll(ScrollView.FOCUS_DOWN)
-        }
+        scrollSummary.post { scrollSummary.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     private fun processRecording(audioPath: String) {
-        // 调用 AIProcessor 处理录音
         Thread {
             val transcription = AIProcessor.transcribeWithXunfei(audioPath)
+            if (!transcription.isNullOrEmpty()) {
+                runOnUiThread { appendRealtimeText("\n---转写结果---\n$transcription") }
+            }
             val summary = AIProcessor.summarizeWithDoubao(transcription ?: "")
-            
-            runOnUiThread {
-                showAiSummary(summary ?: "总结失败")
+            if (!summary.isNullOrEmpty()) {
+                runOnUiThread { showAiSummary(summary) }
+            } else {
+                runOnUiThread { showAiSummary("AI总结失败，请检查API配置") }
             }
         }.start()
     }
 
-    private fun checkPermissions() {
-        if (hasAllPermissions()) {
-            checkAccessibilityService()
-        } else {
-            tvStatus.text = "需要授予权限"
-            findViewById<Button>(R.id.btn_request_permissions)?.visibility = Button.VISIBLE
-        }
-    }
+    // ========== 权限相关 ==========
 
     private fun hasAllPermissions(): Boolean {
         return REQUIRED_PERMISSIONS.all {
@@ -322,74 +291,61 @@ class MainActivity : AppCompatActivity() {
         permissionLauncher.launch(REQUIRED_PERMISSIONS)
     }
 
-    private fun checkAccessibilityService() {
-        if (isAccessibilityServiceEnabled()) {
-            tvStatus.text = "就绪 ✅ (点击「开始工作」)"
-            updateUI()
-        } else {
-            showAccessibilityDialog()
-        }
-    }
+    // ========== 无障碍服务检测 ==========
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val pref = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return pref.getBoolean("accessibility_service_enabled", false)
-    }
-
-    private fun updateUI() {
-        if (isWorking) {
-            btnToggle.text = "停止工作"
-            tvStatus.text = "正在监听通话..."
-            tvRecordingTime.visibility = TextView.VISIBLE
-        } else {
-            btnToggle.text = "开始工作"
-            tvStatus.text = "点击「开始工作」启动"
-            tvRecordingTime.visibility = TextView.GONE
+        val serviceName = "$packageName/.WeChatAccessibilityService"
+        try {
+            val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+            val enabledServices = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            return enabledServices.contains(serviceName) || enabledServices.contains(packageName)
+        } catch (e: Exception) {
+            Log.e(TAG, "检查无障碍服务失败: ${e.message}")
+            return false
         }
     }
 
-    private fun showAccessibilityDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("启用微信电话监听")
-            .setMessage("要监听微信电话，需要开启无障碍服务。\n\n请前往：设置 → 无障碍 → 找到「自动录音AI」→ 开启")
-            .setPositiveButton("去设置") { _, _ ->
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }
-            .setNegativeButton("暂不开启", null)
-            .show()
-        findViewById<Button>(R.id.btn_accessibility)?.visibility = Button.VISIBLE
-    }
+    // ========== UI 更新 ==========
 
-    private fun checkBatteryOptimization() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                // 请求电池优化白名单
-                try {
-                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
-                    batteryOptimizationLauncher.launch(intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to request battery optimization: ${e.message}")
-                }
+    private fun updateUI() {
+        val hasPerms = hasAllPermissions()
+        val hasAccessibility = isAccessibilityServiceEnabled()
+
+        // 权限按钮
+        val btnPerms = findViewById<Button>(R.id.btn_request_permissions)
+        btnPerms.visibility = if (hasPerms) View.GONE else View.VISIBLE
+
+        // 无障碍按钮
+        btnAccessibility.visibility = if (hasAccessibility) View.GONE else View.VISIBLE
+
+        if (isWorking) {
+            btnToggle.text = "停止监听"
+            tvStatus.text = "正在监听通话... 🎙️"
+            tvRecordingTime.visibility = View.VISIBLE
+        } else {
+            btnToggle.text = "开始监听"
+            if (!hasPerms) {
+                tvStatus.text = "请先授予权限"
+            } else if (!hasAccessibility) {
+                tvStatus.text = "就绪 ✅ (可监听电话，微信需开无障碍)"
+            } else {
+                tvStatus.text = "就绪 ✅ (点击「开始监听」)"
             }
+            tvRecordingTime.visibility = View.GONE
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // 每次回到界面检查权限状态
-        checkPermissions()
-        // 检查无障碍服务状态
-        if (isAccessibilityServiceEnabled()) {
-            updateUI()
-        }
+        // 只刷新UI，不弹对话框
+        updateUI()
     }
 
     override fun onStart() {
         super.onStart()
-        // 注册广播接收器
         val filter = IntentFilter().apply {
             addAction(ACTION_RECORDING_STARTED)
             addAction(ACTION_RECORDING_STOPPED)
@@ -405,12 +361,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        // 取消注册广播接收器
-        try {
-            unregisterReceiver(serviceReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to unregister receiver: ${e.message}")
-        }
+        try { unregisterReceiver(serviceReceiver) } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
