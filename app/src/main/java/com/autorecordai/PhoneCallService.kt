@@ -4,17 +4,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.MediaRecorder
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
-import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import android.util.Log
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,95 +25,76 @@ import java.util.Locale
 class PhoneCallService : Service() {
 
     private val TAG = "PhoneCallService"
-    private lateinit var telephonyManager: TelephonyManager
     private var mediaRecorder: MediaRecorder? = null
     private var isRecording = false
     private var currentFilePath: String? = null
     private var callStartTime: Long = 0
+    private var lastPhoneNumber: String? = null
 
     private val CHANNEL_ID = "phone_call_recording"
     private val NOTIFICATION_ID = 1001
 
-    // 使用 Handler 代替 PhoneStateListener（更稳定）
-    private val handler = Handler(Looper.getMainLooper())
-    private var phoneStateListener: PhoneStateListener? = null
-    private var lastCallState = TelephonyManager.CALL_STATE_IDLE
-
-    private fun shouldRecord(): Boolean {
-        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return prefs.getBoolean("service_running", false)
-    }
-
-    private fun handleCallState(state: Int, phoneNumber: String?) {
-        Log.d(TAG, "通话状态变化: $state, 号码: $phoneNumber, 之前状态: $lastCallState")
-
-        if (!shouldRecord()) {
-            Log.d(TAG, "服务未启动，跳过")
-            return
-        }
-
-        // 只处理状态变化
-        if (state == lastCallState) {
-            Log.d(TAG, "状态未变化，跳过")
-            return
-        }
-        lastCallState = state
-
-        when (state) {
-            TelephonyManager.CALL_STATE_OFFHOOK -> {
-                callStartTime = System.currentTimeMillis()
-                startRecording(phoneNumber ?: "未知号码")
-            }
-            TelephonyManager.CALL_STATE_IDLE -> {
-                if (isRecording) {
-                    stopRecordingAndProcess()
-                }
-            }
-            TelephonyManager.CALL_STATE_RINGING -> {
-                Log.d(TAG, "来电: $phoneNumber")
-            }
-        }
-    }
+    private var phoneStateReceiver: BroadcastReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "PhoneCallService onCreate 开始")
-        
+        Log.d(TAG, "PhoneCallService onCreate")
+
         try {
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, createNotification("通话录音服务运行中", "正在监听通话..."))
             Log.d(TAG, "前台服务已启动")
 
-            telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
-
-            // 尝试注册电话状态监听
-            try {
-                @Suppress("DEPRECATION")
-                phoneStateListener = object : PhoneStateListener() {
-                    @Deprecated("Deprecated in API 31")
-                    override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                        Log.d(TAG, "PhoneStateListener 回调: state=$state")
-                        handleCallState(state, phoneNumber)
-                    }
-                }
-                
-                @Suppress("DEPRECATION")
-                telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
-                Log.d(TAG, "PhoneStateListener 注册成功")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "PhoneStateListener 注册失败: ${e.message}")
-                e.printStackTrace()
-                // 不崩溃，继续运行——至少前台服务能保活
-            }
-
-            Log.d(TAG, "PhoneCallService 启动完成")
+            // 注册电话状态广播接收器（比 PhoneStateListener 更可靠）
+            registerPhoneStateReceiver()
+            Log.d(TAG, "电话状态广播接收器已注册")
 
         } catch (e: Exception) {
             Log.e(TAG, "onCreate 异常: ${e.message}")
             e.printStackTrace()
-            // 不要调用 stopSelf()，让服务继续运行
         }
+    }
+
+    private fun registerPhoneStateReceiver() {
+        phoneStateReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
+                    val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                    val phoneNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+                    
+                    if (phoneNumber != null) {
+                        lastPhoneNumber = phoneNumber
+                    }
+
+                    Log.d(TAG, "广播接收: state=$state, number=$lastPhoneNumber")
+
+                    when (state) {
+                        TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                            Log.d(TAG, "通话建立（OFFHOOK）")
+                            callStartTime = System.currentTimeMillis()
+                            startRecording(lastPhoneNumber ?: "未知号码")
+                        }
+                        TelephonyManager.EXTRA_STATE_IDLE -> {
+                            Log.d(TAG, "通话结束（IDLE）")
+                            if (isRecording) {
+                                stopRecordingAndProcess()
+                            }
+                        }
+                        TelephonyManager.EXTRA_STATE_RINGING -> {
+                            Log.d(TAG, "来电响铃: $lastPhoneNumber")
+                        }
+                    }
+                }
+            }
+        }
+
+        val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            registerReceiver(phoneStateReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(phoneStateReceiver, filter)
+        }
+        Log.d(TAG, "广播接收器注册完成")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -125,36 +104,40 @@ class PhoneCallService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    @Suppress("DEPRECATION")
     override fun onDestroy() {
         Log.d(TAG, "PhoneCallService onDestroy")
         super.onDestroy()
-        
+
         try {
-            phoneStateListener?.let {
-                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+            phoneStateReceiver?.let {
+                unregisterReceiver(it)
+                Log.d(TAG, "广播接收器已注销")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "unlisten failed: ${e.message}")
-        } finally {
-            phoneStateListener = null
+            Log.e(TAG, "注销广播接收器失败: ${e.message}")
         }
-        
+        phoneStateReceiver = null
+
         if (isRecording) {
             try { stopRecordingAndProcess() } catch (_: Exception) {}
         }
-        
+
         Log.d(TAG, "PhoneCallService 已停止")
     }
 
+    private fun shouldRecord(): Boolean {
+        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        return prefs.getBoolean("service_running", false)
+    }
+
     private fun startRecording(phoneNumber: String) {
-        if (isRecording) { 
+        if (isRecording) {
             Log.d(TAG, "已经在录音中，跳过")
-            return 
+            return
         }
-        if (!shouldRecord()) { 
+        if (!shouldRecord()) {
             Log.d(TAG, "服务未启动，不录音")
-            return 
+            return
         }
 
         try {
@@ -213,7 +196,7 @@ class PhoneCallService : Service() {
             mediaRecorder?.apply { stop(); release() }
             mediaRecorder = null
             isRecording = false
-            
+
             val duration = (System.currentTimeMillis() - callStartTime) / 1000
             Log.d(TAG, "录音结束，时长: ${duration}秒")
             updateNotification("录音完成", "正在AI处理...")
