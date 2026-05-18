@@ -117,10 +117,11 @@ object AIProcessor {
 
         try {
             // 如果还没有配置豆包API，返回模拟结果（用于测试）
-            if (DOUBAO_API_KEY == "YOUR_DOUBAO_API_KEY") {
-                Log.w(TAG, "豆包API_KEY未配置，返回模拟总结")
+            if (DOUBAO_API_KEY == "YOUR_DOUBAO_API_KEY" || DOUBAO_API_KEY.isEmpty()) {
+                Log.w(TAG, "豆包API_KEY未配置（DOUBAO_API_KEY=$DOUBAO_API_KEY），返回模拟总结")
                 return simulateSummary(text)
             }
+            Log.d(TAG, "豆包API密钥已配置，开始调用..." + DOUBAO_API_KEY.take(8) + "...")
 
             // 构建豆包请求
             val requestBody = JSONObject().apply {
@@ -149,8 +150,7 @@ object AIProcessor {
 
             val response = httpClient.newCall(request).execute()
             val result = response.body?.string()
-            
-            Log.d(TAG, "豆包响应: $result")
+            Log.d(TAG, "豆包HTTP状态: ${response.code}, 响应: ${result?.take(200)}")
             return parseDoubaoResult(result)
 
         } catch (e: Exception) {
@@ -276,17 +276,33 @@ object AIProcessor {
      */
     fun processAudioFile(audioFilePath: String, callback: (String?, String?) -> Unit) {
         Thread {
+            Log.d(TAG, "=== AI处理开始 === 文件: $audioFilePath")
             try {
+                // Step 1: 转写
+                Log.d(TAG, "Step1: 开始转写...")
                 val text = transcribeWithXunfei(audioFilePath)
+                Log.d(TAG, "Step1完成: 转写长度=${text?.length ?: 0}")
                 if (text.isNullOrEmpty()) {
-                    callback(null, "转写失败")
+                    Log.e(TAG, "转写结果为空")
+                    callback(null, "转写失败：未能获取文字内容")
                     return@Thread
                 }
-                
+
+                // Step 2: 总结
+                Log.d(TAG, "Step2: 开始AI总结，文字=${text.take(50)}...")
                 val summary = summarizeWithDoubao(text)
+                Log.d(TAG, "Step2完成: 总结长度=${summary?.length ?: 0}")
+                if (summary.isNullOrEmpty()) {
+                    Log.e(TAG, "总结结果为空，使用默认回复")
+                    callback(text, "总结生成失败，但转写已完成")
+                    return@Thread
+                }
+
+                // Step 3: 回调
+                Log.d(TAG, "=== AI处理完成 === 回调callback，转写=${text.length}字，总结=${summary.length}字")
                 callback(text, summary)
             } catch (e: Exception) {
-                Log.e(TAG, "处理失败: ${e.message}")
+                Log.e(TAG, "处理异常: ${e.message}", e)
                 callback(null, "处理异常: ${e.message}")
             }
         }.start()
