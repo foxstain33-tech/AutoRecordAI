@@ -104,6 +104,13 @@
         android:gravity="center">
 
         <Button
+            android:id="@+id/btn_test_record"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="测试录音(5秒)"
+            android:layout_marginEnd="8dp"/>
+
+        <Button
             android:id="@+id/btn_request_permissions"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -117,6 +124,14 @@
             android:layout_height="wrap_content"
             android:text="无障碍服务"
             android:visibility="gone"/>
+
+        <Button
+            android:id="@+id/btn_view_crash_log"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="查看崩溃日志"
+            android:visibility="gone"
+            android:layout_marginTop="8dp"/>
 
     </LinearLayout>
 
