@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -24,6 +25,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.io.File
 import java.util.Timer
 import java.util.TimerTask
 
@@ -58,20 +60,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scrollRealtime: ScrollView
     private lateinit var scrollSummary: ScrollView
     private lateinit var btnAccessibility: Button
+    private lateinit var btnTestRecord: Button
 
     private var accessibilityDialogShown = false
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        val denied = results.filter { !it.value }.map { it.key }
-        if (denied.isEmpty()) {
-            Toast.makeText(this, "所有权限已授予", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "部分权限被拒绝: " + denied.joinToString(), Toast.LENGTH_LONG).show()
-        }
-        updateUI()
-    }
 
     private val serviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -115,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         scrollRealtime = findViewById(R.id.scroll_realtime)
         scrollSummary = findViewById(R.id.scroll_summary)
         btnAccessibility = findViewById(R.id.btn_accessibility)
+        btnTestRecord = findViewById(R.id.btn_test_record)
     }
 
     private fun setupUI() {
@@ -132,6 +124,10 @@ class MainActivity : AppCompatActivity() {
 
         btnAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        btnTestRecord.setOnClickListener {
+            testRecord()
         }
     }
 
@@ -156,7 +152,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 启动前台服务（只做保活，不做电话监听）
         try {
             val intent = Intent(this, PhoneCallService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -177,7 +172,7 @@ class MainActivity : AppCompatActivity() {
         updateUI()
         startTimer()
 
-        tvRealtimeText.text = "监听中，等待通话..."
+        tvRealtimeText.text = "监听中，等待通话...\n（如长时间无反应，请尝试「测试录音」按钮）"
         tvAiSummary.text = "通话结束后自动生成总结"
 
         Toast.makeText(this, "已开始监听通话", Toast.LENGTH_SHORT).show()
@@ -199,6 +194,73 @@ class MainActivity : AppCompatActivity() {
 
         Toast.makeText(this, "已停止监听", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Work stopped")
+    }
+
+    private fun testRecord() {
+        Toast.makeText(this, "正在录音 5 秒...", Toast.LENGTH_SHORT).show()
+        tvRealtimeText.text = "测试录音中（5秒）..."
+        btnTestRecord.isEnabled = false
+
+        Thread {
+            val audioDir = File(getExternalFilesDir(null), "recordings")
+            if (!audioDir.exists()) audioDir.mkdirs()
+            val fileName = "test_record_${System.currentTimeMillis()}.mp4"
+            val filePath = File(audioDir, fileName).absolutePath
+
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(this)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+
+            try {
+                recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                recorder.setOutputFile(filePath)
+                recorder.prepare()
+                recorder.start()
+
+                Thread.sleep(5000)
+
+                recorder.stop()
+                recorder.release()
+
+                Log.d(TAG, "测试录音完成: $filePath")
+                runOnUiThread {
+                    tvRealtimeText.text = "测试录音完成: $fileName\n正在AI处理..."
+                    btnTestRecord.isEnabled = true
+                }
+
+                // 触发 AI 处理
+                val text = AIProcessor.transcribeWithXunfei(filePath)
+                runOnUiThread {
+                    if (!text.isNullOrEmpty()) {
+                        appendRealtimeText("\n---测试转写---\n$text")
+                    } else {
+                        appendRealtimeText("\n---转写失败，请检查讯飞API配置---")
+                    }
+                }
+
+                val summary = AIProcessor.summarizeWithDoubao(text ?: "")
+                runOnUiThread {
+                    if (!summary.isNullOrEmpty()) {
+                        showAiSummary(summary)
+                    } else {
+                        showAiSummary("AI总结失败，请检查豆包API配置")
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "测试录音失败: ${e.message}")
+                runOnUiThread {
+                    tvRealtimeText.text = "测试录音失败: ${e.message}"
+                    btnTestRecord.isEnabled = true
+                }
+                try { recorder.release() } catch (_: Exception) {}
+            }
+        }.start()
     }
 
     private fun startTimer() {
