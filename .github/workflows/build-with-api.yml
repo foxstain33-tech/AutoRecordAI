@@ -34,6 +34,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build APK
+        env:
+          DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
