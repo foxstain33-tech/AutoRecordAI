@@ -4,16 +4,15 @@ plugins {
 }
 
 android {
-    namespace 'com.autorecordai'
+    namespace "com.autorecordai"
     compileSdk 34
 
     defaultConfig {
         applicationId "com.autorecordai"
-        minSdk 26
+        minSdkVersion 26
         targetSdk 34
         versionCode 1
         versionName "1.0"
-        // BuildConfig字段 - 通过Gradle property注入
         buildConfigField "String", "DOUBAO_API_KEY", "\"${project.findProperty('DOUBAO_API_KEY') ?: ''}\""
     }
 
