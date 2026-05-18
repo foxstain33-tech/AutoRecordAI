@@ -155,9 +155,10 @@ class PhoneCallService : Service() {
         // 自动触发 AI 转写 + 总结
         val recordedFile = currentRecordingFile
         currentRecordingFile = null
+        Log.d(TAG, "准备AI处理，文件路径: $recordedFile")
         if (!recordedFile.isNullOrEmpty()) {
             AIProcessor.processAudioFile(recordedFile) { transcribedText, summary ->
-                Log.d(TAG, "AI处理完成 - 转写:${transcribedText?.take(50)} 总结:${summary?.take(50)}")
+                Log.d(TAG, "【AI回调】收到结果 - 转写长度=${transcribedText?.length} 总结长度=${summary?.length}")
 
                 // 通知 MainActivity 显示 AI 结果
                 val resultIntent = Intent("com.autorecordai.AI_RESULT")
@@ -166,8 +167,19 @@ class PhoneCallService : Service() {
                 resultIntent.putExtra("summary", summary ?: "")
                 sendBroadcast(resultIntent)
 
+                // 保存到文件供后续查看
+                try {
+                    val summaryFile = File(filesDir, "last_summary.txt")
+                    summaryFile.writeText("【转写结果】\n${transcribedText ?: "(空)"}\n\n【AI总结】\n${summary ?: "(空)"}")
+                    Log.d(TAG, "总结已保存到: ${summaryFile.absolutePath}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "保存总结文件失败: ${e.message}")
+                }
+
                 updateNotification("通话录音服务", "AI总结完成！")
             }
+        } else {
+            Log.w(TAG, "录音文件路径为空，跳过AI处理")
         }
     }
 
