@@ -4,10 +4,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
@@ -37,7 +35,6 @@ class PhoneCallService : Service() {
     private val NOTIFICATION_ID = 1001
 
     private var phoneStateListener: PhoneStateListener? = null
-    private var phoneStateReceiver: BroadcastReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -55,16 +52,8 @@ class PhoneCallService : Service() {
             telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
             registerPhoneStateListener()
         } catch (e: Exception) {
-            Log.e(TAG, "PhoneStateListener 注册失败: ${e.message}")
+            Log.e(TAG, "初始化 PhoneStateListener 失败: ${e.message}")
         }
-
-        try {
-            registerPhoneStateBroadcast()
-        } catch (e: Exception) {
-            Log.e(TAG, "BroadcastReceiver 注册失败: ${e.message}")
-        }
-
-        Log.d(TAG, "PhoneCallService 初始化完成")
     }
 
     private fun registerPhoneStateListener() {
@@ -73,7 +62,7 @@ class PhoneCallService : Service() {
             phoneStateListener = object : PhoneStateListener() {
                 @Deprecated("Deprecated in API 31")
                 override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                    Log.d(TAG, "PhoneStateListener 回调: state=$state, number=$phoneNumber")
+                    Log.d(TAG, "【PhoneStateListener 回调】state=$state, phoneNumber=$phoneNumber")
                     handleCallState(state, phoneNumber)
                 }
             }
@@ -86,48 +75,8 @@ class PhoneCallService : Service() {
         }
     }
 
-    private fun registerPhoneStateBroadcast() {
-        try {
-            phoneStateReceiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
-                        val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-                        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
-                        Log.d(TAG, "Broadcast 接收: state=$state, number=$number")
-                        if (number != null) lastPhoneNumber = number
-
-                        when (state) {
-                            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                                Log.d(TAG, "Broadcast: OFFHOOK")
-                                handleCallState(TelephonyManager.CALL_STATE_OFFHOOK, lastPhoneNumber)
-                            }
-                            TelephonyManager.EXTRA_STATE_IDLE -> {
-                                Log.d(TAG, "Broadcast: IDLE")
-                                handleCallState(TelephonyManager.CALL_STATE_IDLE, lastPhoneNumber)
-                            }
-                            TelephonyManager.EXTRA_STATE_RINGING -> {
-                                Log.d(TAG, "Broadcast: RINGING")
-                                handleCallState(TelephonyManager.CALL_STATE_RINGING, lastPhoneNumber)
-                            }
-                        }
-                    }
-                }
-            }
-
-            val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                registerReceiver(phoneStateReceiver, filter, Context.RECEIVER_EXPORTED)
-            } else {
-                registerReceiver(phoneStateReceiver, filter)
-            }
-            Log.d(TAG, "BroadcastReceiver 注册成功")
-        } catch (e: Exception) {
-            Log.e(TAG, "registerPhoneStateBroadcast 失败: ${e.message}")
-        }
-    }
-
     private fun handleCallState(state: Int, phoneNumber: String?) {
-        Log.d(TAG, "handleCallState: $state, number=$phoneNumber")
+        Log.d(TAG, "handleCallState: state=$state, phoneNumber=$phoneNumber")
 
         val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         val shouldRecord = prefs.getBoolean("service_running", false)
@@ -136,21 +85,30 @@ class PhoneCallService : Service() {
             return
         }
 
+        // 保存电话号码
+        if (!phoneNumber.isNullOrEmpty()) {
+            lastPhoneNumber = phoneNumber
+        }
+
         when (state) {
             TelephonyManager.CALL_STATE_OFFHOOK -> {
+                Log.d(TAG, "CALL_STATE_OFFHOOK - 通话建立")
                 if (!isRecording) {
                     callStartTime = System.currentTimeMillis()
-                    startRecording(phoneNumber ?: lastPhoneNumber ?: "未知号码")
+                    startRecording(lastPhoneNumber ?: "未知号码")
                 }
             }
             TelephonyManager.CALL_STATE_IDLE -> {
+                Log.d(TAG, "CALL_STATE_IDLE - 通话结束")
                 if (isRecording) {
                     stopRecordingAndProcess()
                 }
             }
             TelephonyManager.CALL_STATE_RINGING -> {
-                lastPhoneNumber = phoneNumber
-                Log.d(TAG, "来电: $phoneNumber")
+                Log.d(TAG, "CALL_STATE_RINGING - 来电响铃")
+                if (!phoneNumber.isNullOrEmpty()) {
+                    lastPhoneNumber = phoneNumber
+                }
             }
         }
     }
@@ -169,20 +127,12 @@ class PhoneCallService : Service() {
         try {
             phoneStateListener?.let {
                 telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
+                Log.d(TAG, "PhoneStateListener 已注销")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "unlisten PhoneStateListener 失败: ${e.message}")
+            Log.e(TAG, "注销 PhoneStateListener 失败: ${e.message}")
         }
         phoneStateListener = null
-
-        try {
-            phoneStateReceiver?.let {
-                unregisterReceiver(it)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "unregister BroadcastReceiver 失败: ${e.message}")
-        }
-        phoneStateReceiver = null
 
         if (isRecording) {
             try { stopRecordingAndProcess() } catch (_: Exception) {}
@@ -255,9 +205,9 @@ class PhoneCallService : Service() {
             isRecording = false
 
             val duration = (System.currentTimeMillis() - callStartTime) / 1000
-            Log.d(TAG, "录音结束，时长: ${duration}秒")
+            Log.d(TAG, "录音结束，时长: ${duration}秒, 文件: $currentFilePath")
             updateNotification("录音完成", "正在AI处理...")
-            try { Toast.makeText(this, "录音完成", Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
+            try { Toast.makeText(this, "录音完成 (${duration}秒)", Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
 
             sendBroadcast(Intent(MainActivity.ACTION_RECORDING_STOPPED).apply {
                 putExtra("audio_path", currentFilePath)
