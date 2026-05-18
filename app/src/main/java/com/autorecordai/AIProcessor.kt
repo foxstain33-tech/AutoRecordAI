@@ -150,7 +150,21 @@ object AIProcessor {
 
             val response = httpClient.newCall(request).execute()
             val result = response.body?.string()
-            Log.d(TAG, "豆包HTTP状态: ${response.code}, 响应: ${result?.take(200)}")
+            Log.d(TAG, "豆包HTTP状态: ${response.code}")
+
+            if (response.code != 200) {
+                Log.e(TAG, "豆包API调用失败，HTTP ${response.code}，响应: ${result?.take(500)}")
+                return simulateSummary(text)
+            }
+
+            val parsed = parseDoubaoResult(result)
+            if (parsed.isNullOrEmpty()) {
+                Log.e(TAG, "豆包返回结果解析失败，原始响应: ${result?.take(300)}")
+                return simulateSummary(text)
+            }
+
+            Log.d(TAG, "豆包总结成功，长度: ${parsed.length}")
+            return parsed
             return parseDoubaoResult(result)
 
         } catch (e: Exception) {
