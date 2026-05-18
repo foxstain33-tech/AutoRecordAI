@@ -116,12 +116,13 @@ object AIProcessor {
         Log.d(TAG, "开始豆包AI总结，文字长度: ${text.length}")
 
         try {
-            // 如果还没有配置豆包API，返回模拟结果（用于测试）
+            // 如果还没有配置豆包API，直接报错不再模拟
             if (DOUBAO_API_KEY == "YOUR_DOUBAO_API_KEY" || DOUBAO_API_KEY.isEmpty()) {
-                Log.w(TAG, "豆包API_KEY未配置（DOUBAO_API_KEY=$DOUBAO_API_KEY），返回模拟总结")
-                return simulateSummary(text)
+                Log.e(TAG, "ERROR: 豆包API_KEY未正确注入！DOUBAO_API_KEY=[${DOUBAO_API_KEY}]")
+                return "【错误】豆包API密钥未配置，请检查GitHub Secrets和构建日志"
             }
-            Log.d(TAG, "豆包API密钥已配置，开始调用..." + DOUBAO_API_KEY.take(8) + "...")
+            Log.d(TAG, "豆包API密钥已配置（长度=${DOUBAO_API_KEY.length}），开始调用...")
+            Log.d(TAG, "豆包请求体: ${requestBody.toString().take(100)}...")
 
             // 构建豆包请求
             val requestBody = JSONObject().apply {
