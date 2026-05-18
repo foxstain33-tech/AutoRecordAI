@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -25,6 +26,7 @@ import java.util.Locale
 class PhoneCallService : Service() {
 
     private val TAG = "PhoneCallService"
+    private lateinit var telephonyManager: TelephonyManager
     private var mediaRecorder: MediaRecorder? = null
     private var isRecording = false
     private var currentFilePath: String? = null
@@ -34,6 +36,7 @@ class PhoneCallService : Service() {
     private val CHANNEL_ID = "phone_call_recording"
     private val NOTIFICATION_ID = 1001
 
+    private var phoneStateListener: PhoneStateListener? = null
     private var phoneStateReceiver: BroadcastReceiver? = null
 
     override fun onCreate() {
@@ -44,57 +47,112 @@ class PhoneCallService : Service() {
             createNotificationChannel()
             startForeground(NOTIFICATION_ID, createNotification("通话录音服务运行中", "正在监听通话..."))
             Log.d(TAG, "前台服务已启动")
-
-            // 注册电话状态广播接收器（比 PhoneStateListener 更可靠）
-            registerPhoneStateReceiver()
-            Log.d(TAG, "电话状态广播接收器已注册")
-
         } catch (e: Exception) {
-            Log.e(TAG, "onCreate 异常: ${e.message}")
-            e.printStackTrace()
+            Log.e(TAG, "startForeground 失败: ${e.message}")
+        }
+
+        try {
+            telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+            registerPhoneStateListener()
+        } catch (e: Exception) {
+            Log.e(TAG, "PhoneStateListener 注册失败: ${e.message}")
+        }
+
+        try {
+            registerPhoneStateBroadcast()
+        } catch (e: Exception) {
+            Log.e(TAG, "BroadcastReceiver 注册失败: ${e.message}")
+        }
+
+        Log.d(TAG, "PhoneCallService 初始化完成")
+    }
+
+    private fun registerPhoneStateListener() {
+        try {
+            @Suppress("DEPRECATION")
+            phoneStateListener = object : PhoneStateListener() {
+                @Deprecated("Deprecated in API 31")
+                override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                    Log.d(TAG, "PhoneStateListener 回调: state=$state, number=$phoneNumber")
+                    handleCallState(state, phoneNumber)
+                }
+            }
+
+            @Suppress("DEPRECATION")
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+            Log.d(TAG, "PhoneStateListener 注册成功")
+        } catch (e: Exception) {
+            Log.e(TAG, "registerPhoneStateListener 失败: ${e.message}")
         }
     }
 
-    private fun registerPhoneStateReceiver() {
-        phoneStateReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
-                    val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-                    val phoneNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
-                    
-                    if (phoneNumber != null) {
-                        lastPhoneNumber = phoneNumber
-                    }
+    private fun registerPhoneStateBroadcast() {
+        try {
+            phoneStateReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action == TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
+                        val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
+                        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+                        Log.d(TAG, "Broadcast 接收: state=$state, number=$number")
+                        if (number != null) lastPhoneNumber = number
 
-                    Log.d(TAG, "广播接收: state=$state, number=$lastPhoneNumber")
-
-                    when (state) {
-                        TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                            Log.d(TAG, "通话建立（OFFHOOK）")
-                            callStartTime = System.currentTimeMillis()
-                            startRecording(lastPhoneNumber ?: "未知号码")
-                        }
-                        TelephonyManager.EXTRA_STATE_IDLE -> {
-                            Log.d(TAG, "通话结束（IDLE）")
-                            if (isRecording) {
-                                stopRecordingAndProcess()
+                        when (state) {
+                            TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                                Log.d(TAG, "Broadcast: OFFHOOK")
+                                handleCallState(TelephonyManager.CALL_STATE_OFFHOOK, lastPhoneNumber)
                             }
-                        }
-                        TelephonyManager.EXTRA_STATE_RINGING -> {
-                            Log.d(TAG, "来电响铃: $lastPhoneNumber")
+                            TelephonyManager.EXTRA_STATE_IDLE -> {
+                                Log.d(TAG, "Broadcast: IDLE")
+                                handleCallState(TelephonyManager.CALL_STATE_IDLE, lastPhoneNumber)
+                            }
+                            TelephonyManager.EXTRA_STATE_RINGING -> {
+                                Log.d(TAG, "Broadcast: RINGING")
+                                handleCallState(TelephonyManager.CALL_STATE_RINGING, lastPhoneNumber)
+                            }
                         }
                     }
                 }
             }
+
+            val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                registerReceiver(phoneStateReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(phoneStateReceiver, filter)
+            }
+            Log.d(TAG, "BroadcastReceiver 注册成功")
+        } catch (e: Exception) {
+            Log.e(TAG, "registerPhoneStateBroadcast 失败: ${e.message}")
+        }
+    }
+
+    private fun handleCallState(state: Int, phoneNumber: String?) {
+        Log.d(TAG, "handleCallState: $state, number=$phoneNumber")
+
+        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val shouldRecord = prefs.getBoolean("service_running", false)
+        if (!shouldRecord) {
+            Log.d(TAG, "服务未启动，不处理")
+            return
         }
 
-        val filter = IntentFilter(TelephonyManager.ACTION_PHONE_STATE_CHANGED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            registerReceiver(phoneStateReceiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(phoneStateReceiver, filter)
+        when (state) {
+            TelephonyManager.CALL_STATE_OFFHOOK -> {
+                if (!isRecording) {
+                    callStartTime = System.currentTimeMillis()
+                    startRecording(phoneNumber ?: lastPhoneNumber ?: "未知号码")
+                }
+            }
+            TelephonyManager.CALL_STATE_IDLE -> {
+                if (isRecording) {
+                    stopRecordingAndProcess()
+                }
+            }
+            TelephonyManager.CALL_STATE_RINGING -> {
+                lastPhoneNumber = phoneNumber
+                Log.d(TAG, "来电: $phoneNumber")
+            }
         }
-        Log.d(TAG, "广播接收器注册完成")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -109,12 +167,20 @@ class PhoneCallService : Service() {
         super.onDestroy()
 
         try {
-            phoneStateReceiver?.let {
-                unregisterReceiver(it)
-                Log.d(TAG, "广播接收器已注销")
+            phoneStateListener?.let {
+                telephonyManager.listen(it, PhoneStateListener.LISTEN_NONE)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "注销广播接收器失败: ${e.message}")
+            Log.e(TAG, "unlisten PhoneStateListener 失败: ${e.message}")
+        }
+        phoneStateListener = null
+
+        try {
+            phoneStateReceiver?.let {
+                unregisterReceiver(it)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "unregister BroadcastReceiver 失败: ${e.message}")
         }
         phoneStateReceiver = null
 
@@ -125,18 +191,9 @@ class PhoneCallService : Service() {
         Log.d(TAG, "PhoneCallService 已停止")
     }
 
-    private fun shouldRecord(): Boolean {
-        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-        return prefs.getBoolean("service_running", false)
-    }
-
     private fun startRecording(phoneNumber: String) {
         if (isRecording) {
-            Log.d(TAG, "已经在录音中，跳过")
-            return
-        }
-        if (!shouldRecord()) {
-            Log.d(TAG, "服务未启动，不录音")
+            Log.d(TAG, "已在录音中，跳过")
             return
         }
 
@@ -177,7 +234,7 @@ class PhoneCallService : Service() {
             isRecording = true
             Log.d(TAG, "开始录音: $currentFilePath")
             updateNotification("正在录音", "通话对象: $phoneNumber")
-            Toast.makeText(this, "开始录音: $phoneNumber", Toast.LENGTH_SHORT).show()
+            try { Toast.makeText(this, "开始录音", Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
             sendBroadcast(Intent(MainActivity.ACTION_RECORDING_STARTED))
 
         } catch (e: Exception) {
@@ -200,7 +257,7 @@ class PhoneCallService : Service() {
             val duration = (System.currentTimeMillis() - callStartTime) / 1000
             Log.d(TAG, "录音结束，时长: ${duration}秒")
             updateNotification("录音完成", "正在AI处理...")
-            Toast.makeText(this, "录音完成 (${duration}秒)", Toast.LENGTH_SHORT).show()
+            try { Toast.makeText(this, "录音完成", Toast.LENGTH_SHORT).show() } catch (_: Exception) {}
 
             sendBroadcast(Intent(MainActivity.ACTION_RECORDING_STOPPED).apply {
                 putExtra("audio_path", currentFilePath)
@@ -233,7 +290,7 @@ class PhoneCallService : Service() {
             val summary = AIProcessor.summarizeWithDoubao(text ?: "")
             if (!summary.isNullOrEmpty()) {
                 sendBroadcast(Intent(MainActivity.ACTION_AI_SUMMARY).apply { putExtra("summary", summary) })
-                showResultNotification("通话总结已生成", summary.take(80) + "...")
+                showResultNotification("通话总结已生成", summary.take(80))
             } else {
                 showResultNotification("总结失败", "请检查API配置")
             }
