@@ -28,8 +28,11 @@ object AIProcessor {
     
     // 豆包/火山引擎配置
     // 请去 https://console.volcengine.com/ 注册并创建应用获取
-    // 通过GitHub Secrets注入，构建时从BuildConfig读取
-    private val DOUBAO_API_KEY: String = BuildConfig.DOUBAO_API_KEY.ifEmpty { "YOUR_DOUBAO_API_KEY" }
+    // 优先级：BuildConfig > 硬编码（GitHub Actions注入失败时的备用方案）
+    private val DOUBAO_API_KEY: String = BuildConfig.DOUBAO_API_KEY.ifEmpty {
+        // 备用密钥（GitHub Actions注入失败时使用，配置后可删除）
+        "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
+    }
     private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     private const val DOUBAO_MODEL = "doubao-pro-32k"                 // 可选: doubao-pro-32k, doubao-lite-32k
     
@@ -121,8 +124,7 @@ object AIProcessor {
                 Log.e(TAG, "ERROR: 豆包API_KEY未正确注入！DOUBAO_API_KEY=[${DOUBAO_API_KEY}]")
                 return "【错误】豆包API密钥未配置，请检查GitHub Secrets和构建日志"
             }
-            Log.d(TAG, "豆包API密钥已配置（长度=${DOUBAO_API_KEY.length}），开始调用...")
-            Log.d(TAG, "豆包请求体: ${requestBody.toString().take(100)}...")
+            Log.d(TAG, "豆包API密钥已配置（来源=${if (BuildConfig.DOUBAO_API_KEY.isNotEmpty()) "BuildConfig" else "硬编码备用"），长度=${DOUBAO_API_KEY.length}")
 
             // 构建豆包请求
             val requestBody = JSONObject().apply {
@@ -160,13 +162,12 @@ object AIProcessor {
 
             val parsed = parseDoubaoResult(result)
             if (parsed.isNullOrEmpty()) {
-                Log.e(TAG, "豆包返回结果解析失败，原始响应: ${result?.take(300)}")
-                return simulateSummary(text)
+                Log.e(TAG, "豆包返回结果解析失败，原始响应: ${result?.take(500)}")
+                return "【错误】豆包AI返回内容无法解析，请检查API密钥和网络"
             }
 
             Log.d(TAG, "豆包总结成功，长度: ${parsed.length}")
             return parsed
-            return parseDoubaoResult(result)
 
         } catch (e: Exception) {
             Log.e(TAG, "豆包总结失败: ${e.message}")
