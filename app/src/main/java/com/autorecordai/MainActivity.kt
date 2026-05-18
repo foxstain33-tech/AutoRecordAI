@@ -29,7 +29,7 @@ class MainActivity : AppCompatActivity() {
     private val ACTION_RECORDING_STARTED = "com.autorecordai.RECORDING_STARTED"
     private val ACTION_RECORDING_STOPPED = "com.autorecordai.RECORDING_STOPPED"
     private val ACTION_REALTIME_TEXT = "com.autorecordai.REALTIME_TEXT"
-    private val ACTION_AI_SUMMARY = "com.autorecordai.AI_SUMMARY"
+    private val ACTION_AI_RESULT = "com.autorecordai.AI_RESULT"
 
     private lateinit var prefs: SharedPreferences
     private lateinit var btnStart: Button
@@ -62,10 +62,13 @@ class MainActivity : AppCompatActivity() {
                         tvRealtimeText.text = "📝 实时通话内容\n$text"
                     }
                 }
-                ACTION_AI_SUMMARY -> {
+                ACTION_AI_RESULT -> {
+                    val transcribedText = intent.getStringExtra("transcribed_text") ?: ""
                     val summary = intent.getStringExtra("summary") ?: ""
                     runOnUiThread {
-                        tvSummary.text = "🤖 AI 总结\n$summary"
+                        tvRealtimeText.text = "📝 转写内容\n${transcribedText.take(500)}"
+                        tvSummary.text = "🤖 AI 总结\n${summary.take(500)}"
+                        Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -117,7 +120,7 @@ class MainActivity : AppCompatActivity() {
             addAction(ACTION_RECORDING_STARTED)
             addAction(ACTION_RECORDING_STOPPED)
             addAction(ACTION_REALTIME_TEXT)
-            addAction(ACTION_AI_SUMMARY)
+            addAction(ACTION_AI_RESULT)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
