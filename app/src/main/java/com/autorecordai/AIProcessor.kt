@@ -27,12 +27,8 @@ object AIProcessor {
     private const val XUNFEI_API_SECRET = "YOUR_XUNFEI_API_SECRET"    // 讯飞API密钥
     
     // 豆包/火山引擎配置
-    // 请去 https://console.volcengine.com/ 注册并创建应用获取
-    // 优先级：BuildConfig > 硬编码（GitHub Actions注入失败时的备用方案）
-    private val DOUBAO_API_KEY: String = BuildConfig.DOUBAO_API_KEY.ifEmpty {
-        // 备用密钥（GitHub Actions注入失败时使用，配置后可删除）
-        "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
-    }
+    // 直接硬编码（GitHub Actions注入不可靠）
+    private const val DOUBAO_API_KEY: String = "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
     private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     private const val DOUBAO_MODEL = "doubao-pro-32k"                 // 可选: doubao-pro-32k, doubao-lite-32k
     
