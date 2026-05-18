@@ -59,7 +59,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scrollSummary: ScrollView
     private lateinit var btnAccessibility: Button
 
-    // 是否已经弹过无障碍弹窗（本次会话只弹一次）
     private var accessibilityDialogShown = false
 
     private val permissionLauncher = registerForActivityResult(
@@ -102,7 +101,6 @@ class MainActivity : AppCompatActivity() {
         setupUI()
         updateUI()
 
-        // 首次打开只检查权限，不弹无障碍对话框
         if (!hasAllPermissions()) {
             tvStatus.text = "请先授予权限"
         }
@@ -144,9 +142,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // 无障碍服务不强制要求——有则监听微信，没有也监听电话
         if (!isAccessibilityServiceEnabled()) {
-            // 只弹一次
             if (!accessibilityDialogShown) {
                 accessibilityDialogShown = true
                 AlertDialog.Builder(this)
@@ -160,34 +156,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 启动电话监听服务
-        startPhoneService()
-
-        isWorking = true
-        recordingStartTime = System.currentTimeMillis()
-        updateUI()
-        startTimer()
-
-        // 清空之前的文字
-        tvRealtimeText.text = "监听中，等待通话..."
-        tvAiSummary.text = "通话结束后自动生成总结"
-
-        Toast.makeText(this, "已开始监听通话", Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Work started")
-    }
-
-    private fun stopWork() {
-        stopPhoneService()
-
-        isWorking = false
-        updateUI()
-        stopTimer()
-
-        Toast.makeText(this, "已停止监听", Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Work stopped")
-    }
-
-    private fun startPhoneService() {
+        // 启动前台服务（只做保活，不做电话监听）
         try {
             val intent = Intent(this, PhoneCallService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -200,10 +169,22 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "启动服务失败: ${e.message}")
             Toast.makeText(this, "启动服务失败: ${e.message}", Toast.LENGTH_LONG).show()
+            return
         }
+
+        isWorking = true
+        recordingStartTime = System.currentTimeMillis()
+        updateUI()
+        startTimer()
+
+        tvRealtimeText.text = "监听中，等待通话..."
+        tvAiSummary.text = "通话结束后自动生成总结"
+
+        Toast.makeText(this, "已开始监听通话", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Work started")
     }
 
-    private fun stopPhoneService() {
+    private fun stopWork() {
         try {
             stopService(Intent(this, PhoneCallService::class.java))
         } catch (e: Exception) {
@@ -211,6 +192,13 @@ class MainActivity : AppCompatActivity() {
         }
         getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("service_running", false).apply()
+
+        isWorking = false
+        updateUI()
+        stopTimer()
+
+        Toast.makeText(this, "已停止监听", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Work stopped")
     }
 
     private fun startTimer() {
@@ -279,8 +267,6 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // ========== 权限相关 ==========
-
     private fun hasAllPermissions(): Boolean {
         return REQUIRED_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
@@ -291,12 +277,9 @@ class MainActivity : AppCompatActivity() {
         permissionLauncher.launch(REQUIRED_PERMISSIONS)
     }
 
-    // ========== 无障碍服务检测 ==========
-
     private fun isAccessibilityServiceEnabled(): Boolean {
         val serviceName = "$packageName/.WeChatAccessibilityService"
         try {
-            val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
             val enabledServices = Settings.Secure.getString(
                 contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -308,17 +291,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ========== UI 更新 ==========
-
     private fun updateUI() {
         val hasPerms = hasAllPermissions()
         val hasAccessibility = isAccessibilityServiceEnabled()
 
-        // 权限按钮
         val btnPerms = findViewById<Button>(R.id.btn_request_permissions)
         btnPerms.visibility = if (hasPerms) View.GONE else View.VISIBLE
 
-        // 无障碍按钮
         btnAccessibility.visibility = if (hasAccessibility) View.GONE else View.VISIBLE
 
         if (isWorking) {
@@ -340,7 +319,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 只刷新UI，不弹对话框
         updateUI()
     }
 
