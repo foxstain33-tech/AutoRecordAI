@@ -21,21 +21,18 @@ jobs:
           cache: 'gradle'
 
       - name: Create local.properties
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Inject API Key via gradle.properties
+      - name: Write DOUBAO_API_KEY to gradle.properties
         run: |
           echo "DOUBAO_API_KEY=${{ secrets.DOUBAO_API_KEY }}" >> gradle.properties
-          echo "=== gradle.properties 内容（已混淆）==="
-          grep DOUBAO gradle.properties | sed 's/.\{20\}$/***/'
+          echo "验证写入（隐藏密钥内容）:"
+          grep DOUBAO gradle.properties | sed 's/=.*/=***/'
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build APK
-        env:
-          DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
