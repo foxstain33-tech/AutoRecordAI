@@ -5,9 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -17,6 +17,10 @@ import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.Manifest
 import android.util.Log
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,9 +34,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var btnStart: Button
     private lateinit var btnStop: Button
+    private lateinit var btnTestRecord: Button
     private lateinit var tvStatus: TextView
     private lateinit var tvRealtimeText: TextView
     private lateinit var tvSummary: TextView
+
+    private var testRecorder: MediaRecorder? = null
+    private var testFilePath: String? = null
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -72,6 +80,7 @@ class MainActivity : AppCompatActivity() {
 
         btnStart = findViewById(R.id.btn_start)
         btnStop = findViewById(R.id.btn_stop)
+        btnTestRecord = findViewById(R.id.btn_test_record)
         tvStatus = findViewById(R.id.tv_status)
         tvRealtimeText = findViewById(R.id.tv_realtime_text)
         tvSummary = findViewById(R.id.tv_summary)
@@ -80,11 +89,13 @@ class MainActivity : AppCompatActivity() {
 
         btnStart.setOnClickListener {
             Log.d(TAG, "开始监听 clicked")
-            if (checkAndRequestPermissions()) {
+            if (hasBasicPermissions()) {
                 prefs.edit().putBoolean("service_running", true).apply()
                 startPhoneCallService()
                 updateUI()
                 Toast.makeText(this, "开始监听", Toast.LENGTH_SHORT).show()
+            } else {
+                requestBasicPermissions()
             }
         }
 
@@ -94,6 +105,11 @@ class MainActivity : AppCompatActivity() {
             stopPhoneCallService()
             updateUI()
             Toast.makeText(this, "已停止监听", Toast.LENGTH_SHORT).show()
+        }
+
+        btnTestRecord.setOnClickListener {
+            Log.d(TAG, "测试录音 clicked")
+            startTestRecording()
         }
 
         // 注册广播接收器
@@ -109,6 +125,26 @@ class MainActivity : AppCompatActivity() {
             registerReceiver(receiver, filter)
         }
         Log.d(TAG, "广播接收器已注册")
+    }
+
+    private fun hasBasicPermissions(): Boolean {
+        val hasRecord = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val hasPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        Log.d(TAG, "权限检查: RECORD_AUDIO=$hasRecord, READ_PHONE_STATE=$hasPhone")
+        return hasRecord && hasPhone
+    }
+
+    private fun requestBasicPermissions() {
+        val permissions = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.READ_PHONE_STATE)
+        }
+        if (permissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), REQUEST_CODE)
+        }
     }
 
     private fun startPhoneCallService() {
@@ -136,36 +172,64 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkAndRequestPermissions(): Boolean {
-        val permissions = mutableListOf<String>()
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.RECORD_AUDIO)
-        }
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.READ_PHONE_STATE)
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+    private fun startTestRecording() {
+        try {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "请先授予录音权限", Toast.LENGTH_SHORT).show()
+                requestBasicPermissions()
+                return
             }
-        } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        }
 
-        if (permissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), REQUEST_CODE)
-            return false
-        }
+            val audioDir = File(getExternalFilesDir(null), "recordings")
+            if (!audioDir.exists()) audioDir.mkdirs()
 
-        return true
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val testFile = File(audioDir, "test_${timestamp}.mp4")
+            testFilePath = testFile.absolutePath
+
+            testRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(this)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+
+            testRecorder?.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioEncodingBitRate(128000)
+                setAudioSamplingRate(44100)
+                setOutputFile(testFilePath)
+                prepare()
+                start()
+            }
+
+            Toast.makeText(this, "测试录音中 (5秒)...", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "测试录音开始: $testFilePath")
+
+            // 5秒后停止
+            btnTestRecord.postDelayed({
+                stopTestRecording()
+                Toast.makeText(this, "测试录音完成: ${testFile.name}", Toast.LENGTH_LONG).show()
+                Log.d(TAG, "测试录音完成: $testFilePath")
+            }, 5000)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "测试录音失败: ${e.message}")
+            Toast.makeText(this, "测试录音失败: ${e.message}", Toast.LENGTH_LONG).show()
+            try { testRecorder?.release() } catch (_: Exception) {}
+            testRecorder = null
+        }
+    }
+
+    private fun stopTestRecording() {
+        try {
+            testRecorder?.apply { stop(); release() }
+        } catch (e: Exception) {
+            Log.e(TAG, "停止测试录音失败: ${e.message}")
+        }
+        testRecorder = null
     }
 
     private fun updateUI() {
@@ -184,13 +248,16 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CODE) {
-            val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-            if (allGranted) {
+            val hasAudio = grantResults.getOrNull(permissions.indexOf(Manifest.permission.RECORD_AUDIO)) == PackageManager.PERMISSION_GRANTED
+            val hasPhone = grantResults.getOrNull(permissions.indexOf(Manifest.permission.READ_PHONE_STATE)) == PackageManager.PERMISSION_GRANTED
+            
+            if (hasAudio && hasPhone) {
                 prefs.edit().putBoolean("service_running", true).apply()
                 startPhoneCallService()
                 updateUI()
+                Toast.makeText(this, "权限已授予，开始监听", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "需要权限才能正常工作", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "需要录音和电话权限才能工作", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -202,5 +269,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "注销广播接收器失败: ${e.message}")
         }
+        stopTestRecording()
     }
 }
