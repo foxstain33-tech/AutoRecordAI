@@ -144,7 +144,7 @@ class PhoneCallService : Service() {
         recorder = null
         isRecording = false
 
-        updateNotification("通话录音服务", "录音已保存，等待下次通话...")
+        updateNotification("通话录音服务", "正在处理AI转写与总结...")
 
         // 通知 MainActivity 录音结束
         val intent = Intent("com.autorecordai.RECORDING_STOPPED")
@@ -152,7 +152,23 @@ class PhoneCallService : Service() {
         intent.putExtra("file_path", currentRecordingFile)
         sendBroadcast(intent)
 
+        // 自动触发 AI 转写 + 总结
+        val recordedFile = currentRecordingFile
         currentRecordingFile = null
+        if (!recordedFile.isNullOrEmpty()) {
+            AIProcessor.processAudioFile(recordedFile) { transcribedText, summary ->
+                Log.d(TAG, "AI处理完成 - 转写:${transcribedText?.take(50)} 总结:${summary?.take(50)}")
+
+                // 通知 MainActivity 显示 AI 结果
+                val resultIntent = Intent("com.autorecordai.AI_RESULT")
+                resultIntent.setPackage(packageName)
+                resultIntent.putExtra("transcribed_text", transcribedText ?: "")
+                resultIntent.putExtra("summary", summary ?: "")
+                sendBroadcast(resultIntent)
+
+                updateNotification("通话录音服务", "AI总结完成！")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
