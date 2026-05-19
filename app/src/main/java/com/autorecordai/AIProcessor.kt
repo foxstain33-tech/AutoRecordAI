@@ -27,7 +27,7 @@ object AIProcessor {
     
     // 豆包/火山引擎配置
     // 直接硬编码（GitHub Actions注入不可靠）
-    private const val DOUBAO_API_KEY: String = "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
+    private val DOUBAO_API_KEY: String = BuildConfig.DOUBAO_API_KEY.ifEmpty { "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905" }
     private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
     private const val DOUBAO_MODEL = "doubao-pro-32k"                 // 可�? doubao-pro-32k, doubao-lite-32k
     
