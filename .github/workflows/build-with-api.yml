@@ -8,6 +8,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # 使用 env block 注入 DOUBAO_API_KEY，确保 System.getenv() 可读取
+    env:
+      DOUBAO_API_KEY: ${{ secrets.DOUBAO_API_KEY }}
 
     steps:
       - name: Checkout code
@@ -22,12 +25,6 @@ jobs:
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
-
-      - name: Write DOUBAO_API_KEY to gradle.properties
-        run: |
-          echo "DOUBAO_API_KEY=${{ secrets.DOUBAO_API_KEY }}" >> gradle.properties
-          echo "验证写入（隐藏密钥内容）:"
-          grep DOUBAO gradle.properties | sed 's/=.*/=***/'
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
