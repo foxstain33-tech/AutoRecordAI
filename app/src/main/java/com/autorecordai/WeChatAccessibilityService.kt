@@ -177,7 +177,7 @@ class WeChatAccessibilityService : AccessibilityService() {
         // 使用 runBlocking 在 IO 线程处理
         runBlocking(Dispatchers.IO) {
             try {
-                val text = AIProcessor.transcribeWithXunfei(filePath)
+                val text = AIProcessor.transcribeAudio(filePath)
                 val summary = AIProcessor.summarizeWithDoubao(text ?: "")
                 showResultNotification("微信通话总结", summary?.take(100) ?: "处理完成")
             } catch (e: Exception) {
