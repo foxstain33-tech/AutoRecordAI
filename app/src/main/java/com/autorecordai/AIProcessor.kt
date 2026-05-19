@@ -29,7 +29,7 @@ object AIProcessor {
     // 豆包/火山引擎配置（已硬编码）
     private const val DOUBAO_API_KEY = "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
     private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-    private const val DOUBAO_MODEL = "doubao-seed-2-0-pro-260215"
+    private const val DOUBAO_MODEL = "doubao-1-5-lite-32k-250115"
     
     // =====================================================
 
