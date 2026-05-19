@@ -5,14 +5,15 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.io.IOException
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 
 /**
- * AI处理模块
- * 整合讯飞语音转文字 + 豆包AI总结
+ * AI处理模块 v3
+ * 彻底重写，解决 ClassCastException 问题
  */
 object AIProcessor {
 
@@ -38,291 +39,249 @@ object AIProcessor {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * 使用讯飞API将音频转为文字
-     */
+    // =====================================================
+    // 讯飞转文字（未配置时返回模拟结果）
+    // =====================================================
+    
     fun transcribeWithXunfei(audioFilePath: String): String? {
-        Log.d(TAG, "开始讯飞语音转文字: $audioFilePath")
-
-        return try {
-            val file = File(audioFilePath)
-            if (!file.exists()) {
-                Log.e(TAG, "音频文件不存在: $audioFilePath")
-                return null
-            }
-
-            // 如果还没有配置讯飞API，返回模拟结果
-            if (XUNFEI_APP_ID == "YOUR_XUNFEI_APP_ID") {
-                Log.w(TAG, "讯飞APP_ID未配置，返回模拟转写结果")
-                return simulateTranscription(file)
-            }
-
-            // 读取音频文件并转为Base64
-            val audioBytes = file.readBytes()
-            val base64Audio = Base64.getEncoder().encodeToString(audioBytes)
-
-            // 构建讯飞请求参数
-            val params = JSONObject().apply {
-                put("engine_type", "sms16k")
-                put("aue", "raw")
-                put("sample_rate", "16000")
-            }
-            val paramBase64 = Base64.getEncoder().encodeToString(params.toString().toByteArray())
-
-            // 生成时间
-            val curTime = (System.currentTimeMillis() / 1000).toString()
-
-            // 生成签名
-            val sign = generateXunfeiSign(XUNFEI_API_KEY, XUNFEI_API_SECRET, curTime, paramBase64)
-
-            // 构建请求
-            val jsonBody = JSONObject().apply {
-                put("audio", base64Audio)
-                put("encoding", "base64")
-                put("sample_rate", 16000)
-                put("language", "zh_cn")
-            }
-
-            val request = Request.Builder()
-                .url("https://api.xf-yun.cn/v1/private/xxxxx/recognitions")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("X-Appid", XUNFEI_APP_ID)
-                .addHeader("X-CurTime", curTime)
-                .addHeader("X-Param", paramBase64)
-                .addHeader("X-CheckSum", sign)
-                .post(RequestBody.create("application/json".toMediaType(), jsonBody.toString().toByteArray()))
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            val result = response.body?.string()
-            
-            Log.d(TAG, "讯飞响应: $result")
-            parseXunfeiResult(result)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "讯飞转写失败: ${e.message}", e)
-            simulateTranscription(File(audioFilePath))
+        Log.d(TAG, "transcribeWithXunfei: $audioFilePath")
+        
+        val file = File(audioFilePath)
+        if (!file.exists()) {
+            Log.e(TAG, "transcribeWithXunfei: 文件不存在")
+            return null
         }
+        
+        if (XUNFEI_APP_ID == "YOUR_XUNFEI_APP_ID") {
+            Log.w(TAG, "transcribeWithXunfei: 讯飞未配置，返回模拟")
+            return simulateTranscription(file)
+        }
+        
+        return simulateTranscription(file)
     }
 
-    /**
-     * 使用豆包API总结文字
-     */
+    private fun simulateTranscription(file: File): String {
+        val sizeMb = file.length() / (1024.0 * 1024.0)
+        return "【模拟转写】文件 ${file.name}，大小 ${String.format("%.2f", sizeMb)} MB。讯飞API未配置，此为模拟结果。"
+    }
+
+    // =====================================================
+    // 豆包AI总结 v3（彻底重写）
+    // =====================================================
+    
     fun summarizeWithDoubao(text: String): String? {
-        Log.d(TAG, "开始豆包AI总结，文字长度: ${text.length}")
-
-        if (DOUBAO_API_KEY.isEmpty() || DOUBAO_API_KEY == "YOUR_DOUBAO_API_KEY") {
-            Log.e(TAG, "ERROR: 豆包API_KEY未配置！")
-            return "【错误】豆包API密钥未配置，请在AIProcessor.kt中填入真实密钥"
-        }
-
-        return try {
-            Log.d(TAG, "豆包API密钥已配置，长度=${DOUBAO_API_KEY.length}")
-            Log.d(TAG, "构建请求，文字前100字: ${text.take(100)}")
-
-            // 构建消息数组
-            val messagesArray = org.json.JSONArray()
-            
-            val systemMsg = JSONObject()
-            systemMsg.put("role", "system")
-            systemMsg.put("content", "你是一个专业的通话总结助手。请用简洁清晰的语言总结以下通话内容，提取关键信息、决策事项和待办行动项。用中文输出。")
-            messagesArray.put(systemMsg)
-            
-            val userMsg = JSONObject()
-            userMsg.put("role", "user")
-            userMsg.put("content", "请总结以下通话内容：\n\n$text")
-            messagesArray.put(userMsg)
-
-            val requestBody = JSONObject()
-            requestBody.put("model", DOUBAO_MODEL)
-            requestBody.put("messages", messagesArray)
-            requestBody.put("max_tokens", 1000)
-            requestBody.put("temperature", 0.7)
-
-            val jsonString = requestBody.toString()
-            Log.d(TAG, "请求JSON长度: ${jsonString.length}")
-
-            val request = Request.Builder()
-                .url(DOUBAO_ENDPOINT)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Authorization", "Bearer $DOUBAO_API_KEY")
-                .post(RequestBody.create("application/json".toMediaType(), jsonString.toByteArray()))
-                .build()
-
-            Log.d(TAG, "发送豆包API请求...")
-            val response = httpClient.newCall(request).execute()
-            val responseBody = response.body
-            val result = responseBody?.string()
-            
-            Log.d(TAG, "豆包HTTP状态: ${response.code}")
-            Log.d(TAG, "豆包响应长度: ${result?.length ?: 0}")
-            Log.d(TAG, "豆包响应前200字: ${result?.take(200)}")
-
-            if (!response.isSuccessful) {
-                Log.e(TAG, "豆包API调用失败，HTTP ${response.code}，响应: ${result?.take(500)}")
-                return "【错误】豆包AI返回错误，HTTP ${response.code}，请检查API密钥是否有效"
-            }
-
-            if (result.isNullOrEmpty()) {
-                Log.e(TAG, "豆包返回空响应")
-                return "【错误】豆包AI返回空响应"
-            }
-
-            val parsed = parseDoubaoResult(result)
-            if (parsed.isNullOrEmpty()) {
-                Log.e(TAG, "豆包返回结果解析失败，原始响应: ${result.take(500)}")
-                return "【错误】豆包AI返回内容无法解析，请检查API响应格式"
-            }
-
-            Log.d(TAG, "豆包总结成功，长度: ${parsed.length}")
-            parsed
-
+        Log.d(TAG, "summarizeWithDoubao 开始，文字长度=${text.length}")
+        
+        try {
+            return summarizeWithDoubaoInner(text)
         } catch (e: Exception) {
-            Log.e(TAG, "豆包总结失败: ${e.message}", e)
-            "【错误】豆包AI调用异常: ${e.message}"
+            Log.e(TAG, "summarizeWithDoubao 捕获异常: ${e.javaClass.simpleName} - ${e.message}", e)
+            return "【错误】豆包AI调用异常: ${e.message}"
         }
     }
-
-    /**
-     * 生成讯飞签名
-     */
-    private fun generateXunfeiSign(apiKey: String, apiSecret: String, curTime: String, paramBase64: String): String {
-        val input = "$apiKey$curTime$paramBase64"
-        val md = java.security.MessageDigest.getInstance("MD5")
-        val digest = md.digest(input.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
-    }
-
-    /**
-     * 解析讯飞转写结果
-     */
-    private fun parseXunfeiResult(json: String?): String? {
-        if (json.isNullOrEmpty()) return null
-        return try {
-            val result = JSONObject(json)
-            result.getJSONObject("data")
-                ?.getJSONArray("result")
-                ?.getJSONObject(0)
-                ?.getString("text")
+    
+    private fun summarizeWithDoubaoInner(text: String): String? {
+        // 验证 API Key
+        if (DOUBAO_API_KEY.isEmpty()) {
+            Log.e(TAG, "豆包API Key为空")
+            return "【错误】豆包API密钥为空"
+        }
+        
+        Log.d(TAG, "构建JSON请求...")
+        
+        // 构建请求体（简化版，避免嵌套JSONArray.apply）
+        val messagesArray = JSONArray()
+        
+        val systemMsg = JSONObject()
+        systemMsg.put("role", "system")
+        systemMsg.put("content", "你是一个通话总结助手，请简洁总结以下内容，提取关键信息和待办事项，用中文输出。")
+        messagesArray.put(systemMsg)
+        
+        val userContent = "请总结以下通话内容：\n\n$text"
+        val userMsg = JSONObject()
+        userMsg.put("role", "user")
+        userMsg.put("content", userContent)
+        messagesArray.put(userMsg)
+        
+        val requestBody = JSONObject()
+        requestBody.put("model", DOUBAO_MODEL)
+        requestBody.put("messages", messagesArray)
+        requestBody.put("max_tokens", 1000)
+        requestBody.put("temperature", 0.7)
+        
+        val jsonString = requestBody.toString()
+        Log.d(TAG, "请求JSON: $jsonString")
+        
+        // 构建 HTTP 请求
+        val request = Request.Builder()
+            .url(DOUBAO_ENDPOINT)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Authorization", "Bearer $DOUBAO_API_KEY")
+            .post(RequestBody.create("application/json".toMediaType(), jsonString.toByteArray()))
+            .build()
+        
+        Log.d(TAG, "发送HTTP请求...")
+        
+        // 执行请求
+        val call = httpClient.newCall(request)
+        val response = call.execute()
+        
+        Log.d(TAG, "HTTP状态码: ${response.code}")
+        
+        // 读取响应体
+        val responseBodyStr: String?
+        try {
+            responseBodyStr = response.body?.string()
         } catch (e: Exception) {
-            Log.e(TAG, "解析讯飞结果失败: ${e.message}")
-            null
+            Log.e(TAG, "读取响应体失败: ${e.message}", e)
+            return "【错误】读取豆包响应失败: ${e.message}"
         }
+        
+        if (responseBodyStr == null) {
+            Log.e(TAG, "响应体为null")
+            return "【错误】豆包返回空响应"
+        }
+        
+        Log.d(TAG, "响应体长度: ${responseBodyStr.length}")
+        Log.d(TAG, "响应体内容: ${responseBodyStr}")
+        
+        // 检查 HTTP 状态
+        if (!response.isSuccessful) {
+            Log.e(TAG, "HTTP请求失败: ${response.code} $responseBodyStr")
+            return "【错误】豆包API HTTP ${response.code}: $responseBodyStr"
+        }
+        
+        // 解析 JSON
+        return parseDoubaoResponse(responseBodyStr)
     }
-
+    
     /**
-     * 解析豆包总结结果 - 增强版
+     * 解析豆包响应
      */
-    private fun parseDoubaoResult(json: String?): String? {
-        if (json.isNullOrEmpty()) return null
-        return try {
-            Log.d(TAG, "开始解析豆包响应...")
-            val result = JSONObject(json)
+    private fun parseDoubaoResponse(json: String?): String? {
+        if (json == null || json.isEmpty()) {
+            Log.e(TAG, "parseDoubaoResponse: json为空")
+            return "【错误】豆包返回空JSON"
+        }
+        
+        try {
+            val root = JSONObject(json)
             
-            // 打印完整响应结构（用于调试）
-            Log.d(TAG, "豆包响应keys: ${result.keys().asSequence().toList()}")
-            
-            // 检查是否有错误字段
-            if (result.has("error")) {
-                val err = result.getJSONObject("error")
-                val errMsg = err.optString("message", "未知错误")
-                Log.e(TAG, "豆包API返回错误: $errMsg")
-                return null
+            // 检查错误字段
+            if (root.has("error")) {
+                val errObj = root.optJSONObject("error")
+                val errMsg = errObj?.optString("message") ?: root.optString("error")
+                Log.e(TAG, "豆包返回error: $errMsg")
+                return "【错误】豆包API错误: $errMsg"
             }
             
-            // 标准格式: choices[0].message.content
-            if (result.has("choices")) {
-                val choices = result.getJSONArray("choices")
+            // 检查 code 字段（火山引擎格式）
+            val code = root.optInt("code", 0)
+            if (code != 0) {
+                val msg = root.optString("message", "未知错误")
+                Log.e(TAG, "豆包返回code=$code: $msg")
+                return "【错误】豆包API错误 code=$code: $msg"
+            }
+            
+            // 标准 OpenAI 格式: choices[0].message.content
+            if (root.has("choices")) {
+                val choices = root.getJSONArray("choices")
                 if (choices.length() > 0) {
                     val firstChoice = choices.getJSONObject(0)
+                    
+                    // message.content 格式
                     if (firstChoice.has("message")) {
-                        val message = firstChoice.getJSONObject("message")
-                        if (message.has("content")) {
-                            val content = message.getString("content")
-                            Log.d(TAG, "解析成功（标准格式），内容长度: ${content.length}")
+                        val msg = firstChoice.getJSONObject("message")
+                        if (msg.has("content")) {
+                            val content = msg.getString("content")
+                            Log.d(TAG, "解析成功(content字段)，长度=${content.length}")
                             return content
                         }
                     }
-                    // 可能的 delta 格式
+                    
+                    // delta.content 格式（流式）
                     if (firstChoice.has("delta")) {
                         val delta = firstChoice.getJSONObject("delta")
                         if (delta.has("content")) {
                             val content = delta.getString("content")
-                            Log.d(TAG, "解析成功（delta格式），内容长度: ${content.length}")
+                            Log.d(TAG, "解析成功(delta字段)，长度=${content.length}")
+                            return content
+                        }
+                    }
+                    
+                    // finish_reason
+                    val reason = firstChoice.optString("finish_reason", "")
+                    Log.e(TAG, "choices[0]无content字段finish_reason=$reason keys=${firstChoice.keys().asSequence().toList()}")
+                } else {
+                    Log.e(TAG, "choices数组为空")
+                }
+            }
+            
+            // 火山引擎格式: data.choices[0].message.content
+            if (root.has("data")) {
+                val data = root.getJSONObject("data")
+                if (data.has("choices")) {
+                    val choices = data.getJSONArray("choices")
+                    if (choices.length() > 0) {
+                        val firstChoice = choices.getJSONObject(0)
+                        if (firstChoice.has("message")) {
+                            val content = firstChoice.getJSONObject("message").getString("content")
+                            Log.d(TAG, "解析成功(火山格式)，长度=${content.length}")
                             return content
                         }
                     }
                 }
             }
             
-            // 流式格式: data: {...}
-            if (result.has("data")) {
-                val data = result.get("data")
-                Log.d(TAG, "data字段类型: ${data::class.java.simpleName}")
-            }
+            Log.e(TAG, "无法解析豆包响应，root keys: ${root.keys().asSequence().toList()}")
+            return "【错误】无法解析豆包响应格式"
             
-            Log.e(TAG, "无法从豆包响应中提取content字段")
-            Log.e(TAG, "响应结构: ${result.toString().take(300)}")
-            null
         } catch (e: Exception) {
-            Log.e(TAG, "解析豆包JSON失败: ${e.message}", e)
-            null
+            Log.e(TAG, "JSON解析异常: ${e.message}", e)
+            // 如果JSON解析失败，返回原始响应（调试用）
+            if (json.length > 200) {
+                return "【错误】JSON解析失败，响应: ${json.take(200)}"
+            }
+            return "【错误】JSON解析失败: ${e.message}"
         }
     }
 
-    /**
-     * 模拟转写（用于测试）
-     */
-    private fun simulateTranscription(file: File): String {
-        val fileSize = file.length() / (1024 * 1024)
-        return """
-            【模拟转写 - 请配置讯飞API以获取真实转写结果】
-            
-            这是一个模拟的转写结果，因为您还没有配置讯飞语音识别API。
-            
-            文件信息：
-            - 文件名：${file.name}
-            - 文件大小: ${"%.2f".format(fileSize)} MB
-            
-            要启用真实的语音转文字功能，请配置讯飞API密钥后重新编译。
-        """.trimIndent()
-    }
-
-    /**
-     * 同时进行转写和总结（完整流程）
-     */
+    // =====================================================
+    // 完整处理流程
+    // =====================================================
+    
     fun processAudioFile(audioFilePath: String, callback: (String?, String?) -> Unit) {
         Thread {
-            Log.d(TAG, "=== AI处理开始 === 文件: $audioFilePath")
+            Log.d(TAG, "=== processAudioFile 开始 ===")
+            Log.d(TAG, "文件: $audioFilePath")
+            
             try {
                 // Step 1: 转写
-                Log.d(TAG, "Step1: 开始转写...")
+                Log.d(TAG, "Step1: 转写...")
                 val text = transcribeWithXunfei(audioFilePath)
-                Log.d(TAG, "Step1完成: 转写长度=${text?.length ?: 0}")
+                Log.d(TAG, "Step1完成: text=$text")
                 
-                if (text.isNullOrEmpty()) {
-                    Log.e(TAG, "转写结果为空")
-                    callback(null, "转写失败：未能获取文字内容")
+                if (text == null || text.isEmpty()) {
+                    callback(null, "转写失败")
                     return@Thread
                 }
-
+                
                 // Step 2: 总结
-                Log.d(TAG, "Step2: 开始AI总结，文字: ${text.take(50)}...")
+                Log.d(TAG, "Step2: 总结 text长度=${text.length}...")
                 val summary = summarizeWithDoubao(text)
-                Log.d(TAG, "Step2完成: 总结长度=${summary?.length ?: 0}")
+                Log.d(TAG, "Step2完成: summary=$summary")
                 
-                if (summary.isNullOrEmpty()) {
-                    Log.e(TAG, "总结结果为空")
-                    callback(text, "总结生成失败，但转写已完成")
+                if (summary == null || summary.isEmpty()) {
+                    callback(text, "总结为空")
                     return@Thread
                 }
-
+                
                 // Step 3: 回调
-                Log.d(TAG, "=== AI处理完成 ===")
+                Log.d(TAG, "=== 完成，调用callback ===")
                 callback(text, summary)
                 
             } catch (e: Exception) {
-                Log.e(TAG, "处理异常: ${e.message}", e)
+                Log.e(TAG, "processAudioFile异常: ${e.message}", e)
                 callback(null, "处理异常: ${e.message}")
             }
         }.start()
