@@ -1,0 +1,67 @@
+name: Build Android APK (Debug)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout code (force fresh)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: true
+      
+      - name: Debug - Print commit info
+        run: |
+          echo "Current commit:"
+          git log -1 --oneline
+          echo "Commit SHA:"
+          git rev-parse HEAD
+          echo "---"
+      
+      - name: Debug - Check AIProcessor.kt exists and print lines
+        run: |
+          echo "Checking AIProcessor.kt..."
+          if [ -f "app/src/main/java/com/autorecordai/AIProcessor.kt" ]; then
+            echo "✅ File exists"
+            echo "--- First 50 lines ---"
+            head -50 app/src/main/java/com/autorecordai/AIProcessor.kt
+            echo "---"
+            echo "--- Grep for key functions ---"
+            grep -n "fun processAudioFile\|fun summarizeWithDoubao\|fun transcribeWithXunfei\|private const val TAG" app/src/main/java/com/autorecordai/AIProcessor.kt || echo "❌ Key functions NOT found!"
+          else
+            echo "❌ AIProcessor.kt NOT found!"
+            echo "Listing directory:"
+            ls -la app/src/main/java/com/autorecordai/ || echo "Directory not found"
+          fi
+      
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+      
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+      
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      
+      - name: Build APK
+        run: ./gradlew assembleDebug --no-daemon
+        
+      - name: Upload APK artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoRecordAI-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
