@@ -10,3 +10,7 @@ Auto call recording app with AI transcription powered by iFlytek and Doubao.
 
 ---
 Build trigger: 2026-05-19T03:56:47.891Z
+
+
+---
+Build trigger: 2026-05-19T04:00:51.513Z
