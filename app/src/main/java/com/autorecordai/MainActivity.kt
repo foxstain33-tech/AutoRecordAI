@@ -218,12 +218,15 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "测试录音完成: $testFilePath")
 
                 // 触发AI处理（转写+豆包总结）
-                Toast.makeText(this, "正在调用豆包AI总结...", Toast.LENGTH_SHORT).show()
-                AIProcessor.processAudioFile(testFilePath) { transcribedText, summary ->
-                    runOnUiThread {
-                        tvRealtimeText.text = "📝 转写内容\n" + (transcribedText?.take(500) ?: "")
-                        tvSummary.text = "🤖 AI 总结\n" + (summary?.take(500) ?: "")
-                        Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
+                val recordedFile = testFilePath
+                if (!recordedFile.isNullOrEmpty()) {
+                    Toast.makeText(this@MainActivity, "正在调用豆包AI总结...", Toast.LENGTH_SHORT).show()
+                    AIProcessor.processAudioFile(recordedFile) { transcribedText, summary ->
+                        runOnUiThread {
+                            tvRealtimeText.text = "📝 转写内容\n" + (transcribedText?.take(500) ?: "")
+                            tvSummary.text = "🤖 AI 总结\n" + (summary?.take(500) ?: "")
+                            Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }, 5000)
