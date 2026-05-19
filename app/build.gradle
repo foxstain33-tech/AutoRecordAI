@@ -13,11 +13,6 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
-
-        // 从 gradle.properties 读取（workflow 会写入）
-        def doubaoKey = project.findProperty('DOUBAO_API_KEY') ?: ""
-        buildConfigField "String", "DOUBAO_API_KEY", "\"${doubaoKey}\""
-        println "=== BuildConfig.DOUBAO_API_KEY 长度: ${doubaoKey.length()} ==="
     }
 
     buildFeatures {
