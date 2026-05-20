@@ -157,8 +157,8 @@ class PhoneCallService : Service() {
         currentRecordingFile = null
         Log.d(TAG, "准备AI处理，文件路径: $recordedFile")
         if (!recordedFile.isNullOrEmpty()) {
-            AIProcessor.processAudioFile(recordedFile) { transcribedText, summary ->
-                Log.d(TAG, "【AI回调】收到结果 - 转写长度=${transcribedText?.length} 总结长度=${summary?.length}")
+            val (transcribedText, summary) = AIProcessor.processAudioFile(recordedFile)
+                Log.d(TAG, "【AI结果】收到结果 - 转写长度=${transcribedText?.length} 总结长度=${summary?.length}")
 
                 // 通知 MainActivity 显示 AI 结果
                 val resultIntent = Intent("com.autorecordai.AI_RESULT")
