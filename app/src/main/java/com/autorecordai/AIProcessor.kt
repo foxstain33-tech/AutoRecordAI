@@ -1,237 +1,201 @@
-package com.autorecordai
+package com.example.autorecordai
 
+import android.util.Base64
 import android.util.Log
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-import org.json.JSONArray
 import java.io.File
-import java.util.concurrent.TimeUnit
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONArray
+import org.json.JSONObject
 
-/**
- * AI处理模块 v4
- * 使用豆包多模态模型进行语音转文字 + 豆包总结
- */
 object AIProcessor {
 
     private const val TAG = "AIProcessor"
 
-    // ========== 配置区 =========
+    // 豆包 ARK API Key（同时用于语音转写和AI总结）
     private const val DOUBAO_API_KEY = "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
-    private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-    private const val DOUBAO_MODEL = "doubao-1-5-lite-32k-250115"
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
+    // 语音转写模型（支持音频输入）
+    private const val ASR_MODEL = "doubao-seed-2-0-lite-260428"
 
-    // =====================================================
-    // 语音转文字 - 使用豆包多模态模型
-    // =====================================================
+    // AI总结模型
+    private const val SUMMARY_MODEL = "doubao-1-5-lite-32k-250115"
 
-    fun transcribeAudio(audioFilePath: String): String? {
-        Log.d(TAG, "transcribeAudio: $audioFilePath")
+    private const val ARK_API_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
 
-        val file = File(audioFilePath)
-        if (!file.exists()) {
-            Log.e(TAG, "音频文件不存在: $audioFilePath")
-            return null
-        }
-
+    /**
+     * 语音转文字（使用豆包 seed-2.0-lite 模型，支持音频输入）
+     * @param filePath 音频文件路径
+     * @return 转写后的文字
+     */
+    fun transcribeAudio(filePath: String): String {
         return try {
-            transcribeWithDoubaoMultimodal(file)
+            val file = File(filePath)
+            if (!file.exists()) {
+                Log.e(TAG, "音频文件不存在: $filePath")
+                return ""
+            }
+
+            // 读取音频文件并 base64 编码
+            val audioBytes = file.readBytes()
+            val base64Audio = Base64.encodeToString(audioBytes, Base64.NO_WRAP)
+            Log.d(TAG, "音频文件: ${file.length()} bytes, base64 长度: ${base64Audio.length}")
+
+            // 构建请求 JSON（OpenAI 兼容格式，使用 input_audio）
+            val audioFormat = getAudioFormat(filePath)
+            val contentArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("type", "text")
+                    put("text", "请仔细听这段音频，把里面的说话内容逐字转写成文字。如果是中文请输出简体中文，如果是英文请输出英文。只输出转写结果，不要加任何解释。")
+                })
+                put(JSONObject().apply {
+                    put("type", "input_audio")
+                    put("input_audio", JSONObject().apply {
+                        put("data", base64Audio)
+                        put("format", audioFormat)
+                    })
+                })
+            }
+
+            val payload = JSONObject().apply {
+                put("model", ASR_MODEL)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", contentArray)
+                    })
+                })
+                // 降低温度，让输出更稳定
+                put("temperature", 0.1)
+            }
+
+            Log.d(TAG, "发送语音转写请求到模型: $ASR_MODEL")
+
+            // 发送 HTTP 请求
+            val response = postJson(ARK_API_URL, payload.toString(), DOUBAO_API_KEY)
+            Log.d(TAG, "API 响应: ${response.substring(0, Math.min(500, response.length))}")
+
+            parseChatResponse(response)
+
         } catch (e: Exception) {
-            Log.e(TAG, "语音转文字异常: " + e.message, e)
-            "【转写失败】" + e.message
+            Log.e(TAG, "语音转写失败: ${e.message}", e)
+            ""
         }
     }
 
     /**
-     * 使用豆包多模态模型识别音频内容
-     * 将音频 base64 编码后发给豆包，让模型直接识别语音
+     * AI 总结（使用豆包 lite 模型）
+     * @param text 要总结的文字
+     * @return AI 总结结果
      */
-    private fun transcribeWithDoubaoMultimodal(file: File): String? {
-        val audioData = file.readBytes()
-        val base64Audio = java.util.Base64.getEncoder().encodeToString(audioData)
-
-        Log.d(TAG, "豆包多模态识别音频，文件大小=" + file.length() + " bytes")
-
-        val contentArray = JSONArray()
-
-        val textPart = JSONObject().apply {
-            put("type", "text")
-            put("text", "请完整转写这段音频中的所有语音内容，只输出转写文字，不要加任何说明。如果没有语音内容，请回复：无语音内容")
-        }
-        contentArray.put(textPart)
-
-        val audioPart = JSONObject().apply {
-            put("type", "input_audio")
-            put("input_audio", JSONObject().apply {
-                put("data", "data:audio/mp4;base64," + base64Audio)
-                put("format", "mp4")
-            })
-        }
-        contentArray.put(audioPart)
-
-        val userMsg = JSONObject().apply {
-            put("role", "user")
-            put("content", contentArray)
-        }
-
-        val messagesArray = JSONArray()
-        messagesArray.put(userMsg)
-
-        val requestBody = JSONObject().apply {
-            put("model", DOUBAO_MODEL)
-            put("messages", messagesArray)
-            put("max_tokens", 2000)
-        }
-
-        val request = Request.Builder()
-            .url(DOUBAO_ENDPOINT)
-            .addHeader("Content-Type", "application/json")
-            .addHeader("Authorization", "Bearer " + DOUBAO_API_KEY)
-            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        val response = httpClient.newCall(request).execute()
-        val body = response.body?.string()
-        Log.d(TAG, "豆包多模态响应码: " + response.code + ", 长度: " + (body?.length ?: 0))
-
-        if (!response.isSuccessful || body == null) {
-            Log.e(TAG, "豆包多模态失败: " + response.code + " " + (body?.take(200) ?: ""))
-            return "【转写失败】音频识别服务暂不可用（HTTP " + response.code + "）"
-        }
-
-        val json = JSONObject(body)
-
-        if (json.has("error")) {
-            val errMsg = json.optJSONObject("error")?.optString("message") ?: json.optString("error")
-            Log.e(TAG, "豆包多模态错误: " + errMsg)
-            return "【转写失败】" + errMsg
-        }
-
-        val choices = json.optJSONArray("choices")
-        if (choices != null && choices.length() > 0) {
-            val msg = choices.getJSONObject(0).optJSONObject("message")
-            if (msg != null) {
-                val content = msg.optString("content", "")
-                if (content.isNotEmpty() && content != "无语音内容") {
-                    return content
-                }
-            }
-        }
-
-        return "【转写失败】无法识别音频内容"
-    }
-
-    // =====================================================
-    // 豆包AI总结
-    // =====================================================
-
-    fun summarizeWithDoubao(text: String): String? {
-        Log.d(TAG, "summarizeWithDoubao 开始，文字长度=" + text.length)
-
-        try {
-            val messagesArray = JSONArray()
-
-            val systemMsg = JSONObject()
-            systemMsg.put("role", "system")
-            systemMsg.put("content", "你是一个通话总结助手。请简洁总结以下通话内容，提取关键信息和待办事项，用中文输出。")
-            messagesArray.put(systemMsg)
-
-            val userMsg = JSONObject()
-            userMsg.put("role", "user")
-            userMsg.put("content", "请总结以下通话内容：\n\n" + text)
-            messagesArray.put(userMsg)
-
-            val requestBody = JSONObject()
-            requestBody.put("model", DOUBAO_MODEL)
-            requestBody.put("messages", messagesArray)
-            requestBody.put("max_tokens", 1000)
-            requestBody.put("temperature", 0.7)
-
-            val jsonStr = requestBody.toString()
-            val request = Request.Builder()
-                .url(DOUBAO_ENDPOINT)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Authorization", "Bearer " + DOUBAO_API_KEY)
-                .post(jsonStr.toByteArray().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            val responseBodyStr = response.body?.string()
-
-            if (responseBodyStr == null) {
-                return "【错误】豆包返回空响应"
+    fun summarizeWithDoubao(text: String): String {
+        return try {
+            if (text.isBlank()) {
+                Log.w(TAG, "总结内容为空，跳过")
+                return "（无内容可总结）"
             }
 
-            if (!response.isSuccessful) {
-                return "【错误】豆包API HTTP " + response.code + ": " + responseBodyStr
+            val prompt = """
+                请用简洁的中文总结以下内容，不超过200字。
+                内容：$text
+            """.trimIndent()
+
+            val payload = JSONObject().apply {
+                put("model", SUMMARY_MODEL)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", prompt)
+                    })
+                })
+                put("temperature", 0.3)
             }
 
-            val root = JSONObject(responseBodyStr)
+            Log.d(TAG, "发送 AI 总结请求，内容长度: ${text.length}")
 
-            if (root.has("error")) {
-                val errObj = root.optJSONObject("error")
-                val errMsg = errObj?.optString("message") ?: root.optString("error")
-                return "【错误】豆包API错误: " + errMsg
-            }
+            val response = postJson(ARK_API_URL, payload.toString(), DOUBAO_API_KEY)
+            parseChatResponse(response)
 
-            if (root.has("choices")) {
-                val choices = root.getJSONArray("choices")
-                if (choices.length() > 0) {
-                    val firstChoice = choices.getJSONObject(0)
-                    if (firstChoice.has("message")) {
-                        val msg = firstChoice.getJSONObject("message")
-                        if (msg.has("content")) {
-                            return msg.getString("content")
-                        }
-                    }
-                }
-            }
-
-            return "【错误】无法解析豆包响应格式"
         } catch (e: Exception) {
-            Log.e(TAG, "summarizeWithDoubao异常: " + e.message, e)
-            return "【错误】豆包AI调用异常: " + e.message
+            Log.e(TAG, "AI 总结失败: ${e.message}", e)
+            "（AI 总结失败：${e.message}）"
         }
     }
 
-    // =====================================================
-    // 完整处理流程
-    // =====================================================
+    /**
+     * 完整处理：录音文件 → 转文字 → AI 总结
+     */
+    fun processAudioFile(filePath: String): Pair<String, String> {
+        Log.d(TAG, "开始处理音频文件: $filePath")
 
-    fun processAudioFile(audioFilePath: String, callback: (String?, String?) -> Unit) {
-        Thread {
-            Log.d(TAG, "=== processAudioFile 开始 ===")
-            Log.d(TAG, "文件: " + audioFilePath)
+        // 第一步：语音转文字
+        Log.d(TAG, "第一步：语音转文字...")
+        val transcribedText = transcribeAudio(filePath)
+        Log.d(TAG, "转写结果: $transcribedText")
 
-            try {
-                // Step 1: 语音转文字（豆包多模态）
-                Log.d(TAG, "Step1: 语音转文字...")
-                val text = transcribeAudio(audioFilePath)
-                Log.d(TAG, "Step1完成: text长度=" + (text?.length ?: 0))
+        // 第二步：AI 总结
+        Log.d(TAG, "第二步：AI 总结...")
+        val summary = if (transcribedText.isNotBlank()) {
+            summarizeWithDoubao(transcribedText)
+        } else {
+            "（语音转写失败，无法总结）"
+        }
+        Log.d(TAG, "总结结果: $summary")
 
-                if (text == null || text.isEmpty()) {
-                    callback(null, "转写失败：无法识别音频内容")
-                    return@Thread
-                }
+        return Pair(transcribedText, summary)
+    }
 
-                // Step 2: AI总结
-                Log.d(TAG, "Step2: AI总结...")
-                val summary = summarizeWithDoubao(text)
-                Log.d(TAG, "Step2完成: summary长度=" + (summary?.length ?: 0))
+    // ==================== 私有方法 ====================
 
-                callback(text, summary)
+    private fun postJson(urlStr: String, jsonBody: String, apiKey: String): String {
+        val url = URL(urlStr)
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("Authorization", "Bearer $apiKey")
+        conn.doOutput = true
+        conn.connectTimeout = 60000  // 60秒超时（音频处理较慢）
+        conn.readTimeout = 120000
 
-            } catch (e: Exception) {
-                Log.e(TAG, "processAudioFile异常: " + e.message, e)
-                callback(null, "处理异常: " + e.message)
-            }
-        }.start()
+        val writer = OutputStreamWriter(conn.outputStream, "UTF-8")
+        writer.write(jsonBody)
+        writer.flush()
+        writer.close()
+
+        val responseCode = conn.responseCode
+        if (responseCode == 200) {
+            val response = conn.inputStream.bufferedReader().use { it.readText() }
+            conn.disconnect()
+            return response
+        } else {
+            val error = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+            conn.disconnect()
+            throw Exception("HTTP $responseCode: $error")
+        }
+    }
+
+    private fun parseChatResponse(json: String): String {
+        val root = JSONObject(json)
+        if (root.has("error")) {
+            val err = root.getJSONObject("error")
+            throw Exception("API 错误: ${err.optString("message", err.toString())}")
+        }
+        val choices = root.getJSONArray("choices")
+        if (choices.length() == 0) throw Exception("API 返回空结果")
+        val message = choices.getJSONObject(0).getJSONObject("message")
+        return message.optString("content", "").trim()
+    }
+
+    private fun getAudioFormat(filePath: String): String {
+        val ext = filePath.substringAfterLast('.').lowercase()
+        return when (ext) {
+            "m4a" -> "m4a"
+            "mp3" -> "mp3"
+            "mp4" -> "mp4"
+            "ogg" -> "ogg"
+            "flac" -> "flac"
+            else -> "wav"
+        }
     }
 }
