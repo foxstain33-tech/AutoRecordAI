@@ -160,24 +160,23 @@ class PhoneCallService : Service() {
             val (transcribedText, summary) = AIProcessor.processAudioFile(recordedFile)
             Log.d(TAG, "【AI结果】收到结果 - 转写长度=${transcribedText?.length} 总结长度=${summary?.length}")
 
-                // 通知 MainActivity 显示 AI 结果
-                val resultIntent = Intent("com.autorecordai.AI_RESULT")
-                resultIntent.setPackage(packageName)
-                resultIntent.putExtra("transcribed_text", transcribedText ?: "")
-                resultIntent.putExtra("summary", summary ?: "")
-                sendBroadcast(resultIntent)
+            // 通知 MainActivity 显示 AI 结果
+            val resultIntent = Intent("com.autorecordai.AI_RESULT")
+            resultIntent.setPackage(packageName)
+            resultIntent.putExtra("transcribed_text", transcribedText ?: "")
+            resultIntent.putExtra("summary", summary ?: "")
+            sendBroadcast(resultIntent)
 
-                // 保存到文件供后续查看
-                try {
-                    val summaryFile = File(filesDir, "last_summary.txt")
-                    summaryFile.writeText("【转写结果】\n${transcribedText ?: "(空)"}\n\n【AI总结】\n${summary ?: "(空)"}")
-                    Log.d(TAG, "总结已保存到: ${summaryFile.absolutePath}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "保存总结文件失败: ${e.message}")
-                }
-
-                updateNotification("通话录音服务", "AI总结完成！")
+            // 保存到文件供后续查看
+            try {
+                val summaryFile = File(filesDir, "last_summary.txt")
+                summaryFile.writeText("【转写结果】\n${transcribedText ?: "(空)"}\n\n【AI总结】\n${summary ?: "(空)"}")
+                Log.d(TAG, "总结已保存到: ${summaryFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "保存总结文件失败: ${e.message}")
             }
+
+            updateNotification("通话录音服务", "AI总结完成！")
         } else {
             Log.w(TAG, "录音文件路径为空，跳过AI处理")
         }
