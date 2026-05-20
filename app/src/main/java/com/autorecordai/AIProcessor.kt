@@ -1,4 +1,4 @@
-package com.example.autorecordai
+package com.autorecordai
 
 import android.util.Base64
 import android.util.Log
