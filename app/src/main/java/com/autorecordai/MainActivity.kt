@@ -222,11 +222,10 @@ class MainActivity : AppCompatActivity() {
                 if (!recordedFile.isNullOrEmpty()) {
                     Toast.makeText(this@MainActivity, "正在调用豆包AI总结...", Toast.LENGTH_SHORT).show()
                     val (transcribedText, summary) = AIProcessor.processAudioFile(recordedFile)
-                        runOnUiThread {
-                            tvRealtimeText.text = "📝 转写内容\n" + (transcribedText?.take(500) ?: "")
-                            tvSummary.text = "🤖 AI 总结\n" + (summary?.take(500) ?: "")
-                            Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
-                        }
+                    runOnUiThread {
+                        tvRealtimeText.text = "📝 转写内容\n" + (transcribedText?.take(500) ?: "")
+                        tvSummary.text = "🤖 AI 总结\n" + (summary?.take(500) ?: "")
+                        Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
                     }
                 }
             }, 5000)
