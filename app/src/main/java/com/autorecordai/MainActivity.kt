@@ -221,7 +221,7 @@ class MainActivity : AppCompatActivity() {
                 val recordedFile = testFilePath
                 if (!recordedFile.isNullOrEmpty()) {
                     Toast.makeText(this@MainActivity, "正在调用豆包AI总结...", Toast.LENGTH_SHORT).show()
-                    AIProcessor.processAudioFile(recordedFile) { transcribedText, summary ->
+                    val (transcribedText, summary) = AIProcessor.processAudioFile(recordedFile)
                         runOnUiThread {
                             tvRealtimeText.text = "📝 转写内容\n" + (transcribedText?.take(500) ?: "")
                             tvSummary.text = "🤖 AI 总结\n" + (summary?.take(500) ?: "")
