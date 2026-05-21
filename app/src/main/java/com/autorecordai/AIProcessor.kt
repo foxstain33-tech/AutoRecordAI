@@ -45,7 +45,7 @@ object AIProcessor {
         } catch (e: Exception) {
             Log.e(TAG, "转写失败: ${e.message}")
             e.printStackTrace()
-            return ""
+            return "[错误] 转写失败: ${e.message}"
         }
     }
 
@@ -76,7 +76,7 @@ object AIProcessor {
         } catch (e: Exception) {
             Log.e(TAG, "总结失败: ${e.message}")
             e.printStackTrace()
-            return ""
+            return "[错误] 总结失败: ${e.message}"
         }
     }
 
@@ -230,6 +230,7 @@ $text
         } catch (e: Exception) {
             Log.e(TAG, "请求失败: ${e.message}")
             e.printStackTrace()
+            return "[错误] 请求异常: ${e.message}"
         } finally {
             conn.disconnect()
         }
