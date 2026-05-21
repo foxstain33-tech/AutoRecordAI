@@ -10,7 +10,7 @@ object AIProcessor {
     // 豆包 API 配置
     private const val DOUBAO_API_KEY = "ark-a6c2e7aa-49d9-4303-b426-c71ca9c3cf3e-8d905"
     private const val DOUBAO_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-    private const val DOUBAO_MODEL = "doubao-pro-32k"
+    private const val DOUBAO_MODEL = "ep-20260521105536-btrqp"
     
     // Groq Whisper 配置
     private const val GROQ_API_KEY = "gsk_free_placeholder"  // Groq 免费API，无需真实key
