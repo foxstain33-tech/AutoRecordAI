@@ -3,6 +3,8 @@ package com.autorecordai
 import android.util.Log
 import java.io.File
 import kotlin.Pair
+import org.json.JSONObject
+import org.json.JSONArray
 
 object AIProcessor {
     private const val TAG = "AIProcessor"
@@ -13,7 +15,7 @@ object AIProcessor {
     private const val DOUBAO_MODEL = "ep-20260521105536-btrqp"
     
     // Groq Whisper 配置
-    private const val GROQ_API_KEY = "gsk_free_placeholder"  // Groq 免费API，无需真实key
+    private const val GROQ_API_KEY = "gsk_free_placeholder"
     private const val GROQ_WHISPER_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
     /**
@@ -31,7 +33,6 @@ object AIProcessor {
             
             Log.d(TAG, "开始语音转文字，文件大小: ${audioFile.length()} bytes")
             
-            // 使用 OkHttp 发送请求
             val result = sendGroqWhisperRequest(audioFile)
             
             if (result.isNotEmpty()) {
@@ -85,10 +86,10 @@ object AIProcessor {
     fun processAudioFile(filePath: String): Pair<String, String> {
         Log.d(TAG, "processAudioFile: $filePath")
         
-        // Step 1: 语音转文字
+        // Step1: 语音转文字
         val transcribedText = transcribeAudio(filePath)
         
-        // Step 2: AI 总结
+        // Step2: AI 总结
         var summary = ""
         var textForSummary = transcribedText
         if (textForSummary.isEmpty()) {
@@ -119,7 +120,6 @@ $text
      * 发送请求到 Groq Whisper API
      */
     private fun sendGroqWhisperRequest(audioFile: File): String {
-        // 使用原生 HTTP 实现
         val boundary = "----WebKitFormBoundary${System.currentTimeMillis()}"
         val url = java.net.URL(GROQ_WHISPER_URL)
         val conn = url.openConnection() as java.net.HttpURLConnection
@@ -132,7 +132,6 @@ $text
             conn.connectTimeout = 30000
             conn.readTimeout = 60000
             
-            // 构建请求体
             val outputStream = conn.outputStream
             
             // 添加 file 字段
@@ -153,12 +152,10 @@ $text
             outputStream.flush()
             outputStream.close()
             
-            // 读取响应
             val responseCode = conn.responseCode
             if (responseCode == 200) {
                 val response = conn.inputStream.bufferedReader().readText()
                 
-                // 解析 JSON 响应
                 val textStart = response.indexOf("\"text\":\"") + 8
                 val textEnd = response.indexOf("\"", textStart)
                 
@@ -169,8 +166,8 @@ $text
                 }
             } else {
                 Log.e(TAG, "Whisper API 错误: $responseCode")
-                val errorStream = conn.errorStream?.bufferedReader()?.readText()
-                Log.e(TAG, "错误详情: $errorStream")
+                val error = conn.errorStream?.bufferedReader()?.readText()
+                Log.e(TAG, "错误详情: $error")
             }
         } finally {
             conn.disconnect()
@@ -180,7 +177,7 @@ $text
     }
 
     /**
-     * 发送请求到豆包 API
+     * 发送请求到豆包 API（使用 JSONObject 正确构建 JSON）
      */
     private fun sendDoubaoRequest(prompt: String): String {
         val url = java.net.URL(DOUBAO_ENDPOINT)
@@ -194,39 +191,45 @@ $text
             conn.connectTimeout = 30000
             conn.readTimeout = 60000
             
-            // 构建请求体
-            val requestBody = """{
-                "model": "$DOUBAO_MODEL",
-                "messages": [
-                    {"role": "user", "content": "$prompt"}
-                ],
-                "max_tokens": 2000,
-                "temperature": 0.7
-            }"""
+            // 使用 JSONObject 正确构建 JSON（避免字符串拼接错误）
+            val json = JSONObject()
+            json.put("model", DOUBAO_MODEL)
+            json.put("max_tokens", 2000)
+            json.put("temperature", 0.7)
+            
+            val messages = JSONArray()
+            val msg = JSONObject()
+            msg.put("role", "user")
+            msg.put("content", prompt)
+            messages.put(msg)
+            json.put("messages", messages)
+            
+            val requestBody = json.toString()
             
             conn.outputStream.write(requestBody.toByteArray(Charsets.UTF_8))
             conn.outputStream.flush()
             conn.outputStream.close()
             
-            // 读取响应
             val responseCode = conn.responseCode
             if (responseCode == 200) {
                 val response = conn.inputStream.bufferedReader().readText()
                 
-                // 简单解析 JSON 提取 content
-                val contentStart = response.indexOf("\"content\":\"") + 11
-                val contentEnd = response.indexOf("\"", contentStart)
+                // 正确解析 JSON 响应
+                val jsonResp = JSONObject(response)
+                val content = jsonResp.getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
                 
-                if (contentStart > 10 && contentEnd > contentStart) {
-                    return response.substring(contentStart, contentEnd)
-                        .replace("\\n", "\n")
-                        .replace("\\\"", "\"")
-                }
+                return content
             } else {
                 Log.e(TAG, "豆包 API 错误: $responseCode")
-                val errorStream = conn.errorStream?.bufferedReader()?.readText()
-                Log.e(TAG, "错误详情: $errorStream")
+                val error = conn.errorStream?.bufferedReader()?.readText()
+                Log.e(TAG, "错误详情: $error")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "请求失败: ${e.message}")
+            e.printStackTrace()
         } finally {
             conn.disconnect()
         }
