@@ -90,9 +90,12 @@ object AIProcessor {
         
         // Step 2: AI 总结
         var summary = ""
-        if (transcribedText.isNotEmpty()) {
-            summary = summarizeWithDoubao(transcribedText)
+        var textForSummary = transcribedText
+        if (textForSummary.isEmpty()) {
+            Log.w(TAG, "转写结果为空，使用模拟文本测试豆包总结")
+            textForSummary = "[语音转文字暂未配置，此为测试文本] 今天的通话讨论了项目进度，约定下周三开会确认方案，张三负责准备材料，李四负责联系客户。"
         }
+        summary = summarizeWithDoubao(textForSummary)
         
         return Pair(transcribedText, summary)
     }
