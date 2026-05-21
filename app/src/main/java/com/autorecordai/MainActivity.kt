@@ -21,6 +21,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
@@ -211,21 +212,38 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "测试录音中 (5秒)...", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "测试录音开始: $testFilePath")
 
-            // 5秒后停止
+            // 5秒后停止录音，然后在子线程中处理AI
             btnTestRecord.postDelayed({
                 stopTestRecording()
-                Toast.makeText(this, "测试录音完成: ${testFile.name}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "测试录音完成: ${testFile.name}", Toast.LENGTH_LONG).show()
                 Log.d(TAG, "测试录音完成: $testFilePath")
 
-                // 触发AI处理（转写+豆包总结）
                 val recordedFile = testFilePath
                 if (!recordedFile.isNullOrEmpty()) {
                     Toast.makeText(this@MainActivity, "正在调用豆包AI总结...", Toast.LENGTH_SHORT).show()
-                    val (transcribedText, summary) = AIProcessor.processAudioFile(recordedFile)
-                    runOnUiThread {
-                        tvRealtimeText.text = "📝 转写内容\n" + (transcribedText?.take(500) ?: "")
-                        tvSummary.text = "🤖 AI 总结\n" + (summary?.take(500) ?: "")
-                        Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
+
+                    // ★★★ 关键修复：在子线程中执行网络请求 ★★★
+                    thread(name = "AIProcessorThread") {
+                        Log.d(TAG, "AI处理开始在子线程")
+                        try {
+                            val result = AIProcessor.processAudioFile(recordedFile)
+                            val transcribedText = result.first
+                            val summary = result.second
+                            Log.d(TAG, "AI处理完成，回到主线程更新UI")
+
+                            // 回到主线程更新UI
+                            runOnUiThread {
+                                tvRealtimeText.text = "📝 转写内容\n" + (transcribedText.take(500))
+                                tvSummary.text = "🤖 AI 总结\n" + (summary.take(500))
+                                Toast.makeText(this@MainActivity, "AI处理完成！", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "AI处理异常: ${e.message}", e)
+                            runOnUiThread {
+                                tvSummary.text = "🤖 AI 总结\n[错误] AI处理异常: ${e.message}"
+                                Toast.makeText(this@MainActivity, "AI处理失败: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     }
                 }
             }, 5000)
